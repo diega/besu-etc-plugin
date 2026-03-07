@@ -1,0 +1,2 @@
+# Copy to local.properties (gitignored) and adjust the path
+besuDir=../besu
