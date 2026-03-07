@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v26.3.0-SNAPSHOT)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Read Besu version from gradle.properties
+        run: |
+          BESU_VERSION=$(grep '^besuVersion=' gradle.properties | cut -d= -f2)
+          echo "BESU_VERSION=${BESU_VERSION}" >> $GITHUB_ENV
+
+      - name: Checkout Besu fork
+        uses: actions/checkout@v4
+        with:
+          repository: diega/besu
+          ref: plugin-extensions
+          path: besu
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Publish Besu to mavenLocal
+        working-directory: besu
+        run: ./gradlew publishToMavenLocal -Pversion=${{ env.BESU_VERSION }} -x test -x javadoc
+
+      - name: Build plugin
+        run: ./gradlew build
+
+      - name: Build Besu distribution
+        working-directory: besu
+        run: ./gradlew installDist -Pversion=${{ env.BESU_VERSION }} -x test -x autocomplete
+
+      - name: Determine release tag
+        run: echo "RELEASE_TAG=${{ github.ref_name != 'main' && github.ref_name || inputs.tag }}" >> $GITHUB_ENV
+
+      - name: Assemble release
+        run: |
+          mkdir -p besu/build/install/besu/plugins
+          cp build/libs/besu-etc-plugin-*.jar besu/build/install/besu/plugins/
+          cd besu/build/install
+          tar czf $GITHUB_WORKSPACE/besu-etc-${RELEASE_TAG}.tar.gz besu/
+          zip -r $GITHUB_WORKSPACE/besu-etc-${RELEASE_TAG}.zip besu/
+          cd $GITHUB_WORKSPACE
+          sha256sum besu-etc-${RELEASE_TAG}.tar.gz > besu-etc-${RELEASE_TAG}.tar.gz.sha256
+          sha256sum besu-etc-${RELEASE_TAG}.zip > besu-etc-${RELEASE_TAG}.zip.sha256
+          cp build/libs/besu-etc-plugin-*.jar .
+          sha256sum besu-etc-plugin-*.jar > besu-etc-plugin-${RELEASE_TAG#v}.jar.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            besu-etc-${{ env.RELEASE_TAG }}.tar.gz
+            besu-etc-${{ env.RELEASE_TAG }}.tar.gz.sha256
+            besu-etc-${{ env.RELEASE_TAG }}.zip
+            besu-etc-${{ env.RELEASE_TAG }}.zip.sha256
+            besu-etc-plugin-*.jar
+            besu-etc-plugin-*.jar.sha256

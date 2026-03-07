@@ -1,0 +1,112 @@
+plugins {
+  id 'java-library'
+}
+
+group = 'org.hyperledger.besu.plugins'
+version = '26.3.0-SNAPSHOT'
+
+java {
+  sourceCompatibility = JavaVersion.VERSION_21
+  targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+  mavenLocal()
+  mavenCentral()
+  maven {
+    url = 'https://hyperledger.jfrog.io/hyperledger/besu-maven'
+    content { includeGroupByRegex('org\\.hyperledger\\..*') }
+  }
+  maven {
+    url = 'https://artifacts.consensys.net/public/maven/maven/'
+    content { includeGroupByRegex('tech\\.pegasys(\\..*)?') }
+  }
+}
+
+def besuVersion = project.property('besuVersion')
+def compositeBuild = gradle.ext.has('besuCompositeBuildDir')
+
+// Composite build: classifier artifacts (test-support) are not available through
+// dependency substitution. We reference the pre-built JAR from the Besu checkout.
+if (compositeBuild) {
+  def besuDir = gradle.ext.besuCompositeBuildDir
+  // Ensure the test-support JAR is built before our tests compile
+  gradle.projectsEvaluated {
+    tasks.named('compileTestJava') {
+      dependsOn gradle.includedBuild('besu').task(':ethereum:core:testSupportJar')
+    }
+  }
+}
+
+dependencies {
+  // Plugin API (public contract — group org.hyperledger.besu)
+  api "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
+  api 'org.slf4j:slf4j-api'
+
+  // Besu public modules (group org.hyperledger.besu)
+  implementation "org.hyperledger.besu:besu-evm:${besuVersion}"
+  implementation "org.hyperledger.besu:besu-datatypes:${besuVersion}"
+
+  // Besu internal modules (group org.hyperledger.besu.internal)
+  implementation "org.hyperledger.besu.internal:besu-ethereum-core:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-ethereum-rlp:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-ethereum-eth:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-ethereum-p2p:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-config:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-crypto-algorithms:${besuVersion}"
+  implementation "org.hyperledger.besu.internal:besu-util:${besuVersion}"
+
+  // External
+  compileOnly 'com.google.auto.service:auto-service:1.1.1'
+  annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
+  implementation 'info.picocli:picocli:4.7.6'
+  implementation 'com.google.guava:guava:33.4.2-jre'
+  implementation 'io.consensys.tuweni:tuweni-bytes:2.7.2'
+  implementation 'io.consensys.tuweni:tuweni-units:2.7.2'
+
+  // Test
+  testImplementation "org.hyperledger.besu.internal:besu-testutil:${besuVersion}"
+  if (compositeBuild) {
+    // Composite build: reference the test-support classes directly from Besu build output
+    def besuDir = gradle.ext.besuCompositeBuildDir
+    testImplementation files("${besuDir}/ethereum/core/build/classes/java/testSupport")
+  } else {
+    // Maven: use classifier artifact published by Besu
+    testImplementation("org.hyperledger.besu.internal:besu-ethereum-core:${besuVersion}:test-support")
+  }
+  testImplementation platform('org.mockito:mockito-bom:5.19.0')
+  testImplementation 'org.mockito:mockito-core'
+  testImplementation 'org.mockito:mockito-junit-jupiter'
+  testImplementation platform('org.junit:junit-bom:5.11.4')
+  testImplementation 'org.junit.jupiter:junit-jupiter'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+  testImplementation platform('org.assertj:assertj-bom:3.27.7')
+  testImplementation 'org.assertj:assertj-core'
+}
+
+// Generate plugin-artifacts-catalog.json for Besu's PluginVerifier
+tasks.register('generatePluginCatalog') {
+  def catalogFile = layout.buildDirectory.file('reports/dependencies/plugin-artifacts-catalog.json')
+  outputs.file(catalogFile)
+  doLast {
+    def catalog = groovy.json.JsonOutput.toJson([
+      besuVersion: besuVersion,
+      dependencies: []
+    ])
+    def outFile = catalogFile.get().asFile
+    outFile.parentFile.mkdirs()
+    outFile.text = groovy.json.JsonOutput.prettyPrint(catalog)
+  }
+}
+
+jar {
+  dependsOn 'generatePluginCatalog'
+  from(layout.buildDirectory.file('reports/dependencies/plugin-artifacts-catalog.json')) {
+    into('META-INF/')
+  }
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+test {
+  useJUnitPlatform()
+}
