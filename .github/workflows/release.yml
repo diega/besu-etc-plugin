@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+      tags: ${{ steps.p.outputs.tags }}
+    steps:
+      - id: p
+        run: |
+          cat > /tmp/releases.yml <<'YAML'
+          stable:
+            besu_branch: 26.4.0-RC1-plugin-extensions
+            besu_version: 26.4.0-RC1
+          experimental:
+            - name: on-10220
+              besu_branch: plugin-extensions-on-10220
+              besu_version: 26.3.0-SNAPSHOT
+          YAML
+          python3 <<'PY'
+          import yaml, json, os
+          cfg = yaml.safe_load(open('/tmp/releases.yml'))
+          items = []
+          s = cfg['stable']
+          items.append({
+            'name': 'stable',
+            'besu_branch': s['besu_branch'],
+            'besu_version': s['besu_version'],
+            'tag': f"{s['besu_version']}-etc",
+          })
+          for e in cfg.get('experimental') or []:
+            items.append({
+              'name': e['name'],
+              'besu_branch': e['besu_branch'],
+              'besu_version': e['besu_version'],
+              'tag': f"{e['besu_version']}-etc-{e['name']}",
+            })
+          tags = [it['tag'] for it in items]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"matrix={json.dumps({'include': items})}\n")
+            f.write(f"tags={json.dumps(tags)}\n")
+          PY
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Checkout Besu fork
+        uses: actions/checkout@v4
+        with:
+          repository: diega/besu
+          ref: ${{ matrix.besu_branch }}
+          path: besu
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Publish Besu to mavenLocal
+        working-directory: besu
+        run: ./gradlew publishToMavenLocal -Pversion=${{ matrix.besu_version }} -x test -x javadoc
+
+      - name: Build plugin
+        run: ./gradlew build -PbesuVersion=${{ matrix.besu_version }}
+
+      - name: Build Besu distribution
+        working-directory: besu
+        run: ./gradlew installDist -Pversion=${{ matrix.besu_version }} -x test -x autocomplete
+
+      - name: Assemble release
+        run: |
+          TAG="${{ matrix.tag }}"
+          mkdir -p besu/build/install/besu/plugins
+          cp build/libs/besu-etc-plugin-*.jar besu/build/install/besu/plugins/
+          cd besu/build/install
+          tar czf $GITHUB_WORKSPACE/besu-etc-${TAG}.tar.gz besu/
+          zip -r $GITHUB_WORKSPACE/besu-etc-${TAG}.zip besu/
+          cd $GITHUB_WORKSPACE
+          sha256sum besu-etc-${TAG}.tar.gz > besu-etc-${TAG}.tar.gz.sha256
+          sha256sum besu-etc-${TAG}.zip > besu-etc-${TAG}.zip.sha256
+          cp build/libs/besu-etc-plugin-*.jar .
+          sha256sum besu-etc-plugin-*.jar > besu-etc-plugin-${TAG}.jar.sha256
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.tag }}
+          name: ${{ matrix.tag }}
+          prerelease: true
+          files: |
+            besu-etc-${{ matrix.tag }}.tar.gz
+            besu-etc-${{ matrix.tag }}.tar.gz.sha256
+            besu-etc-${{ matrix.tag }}.zip
+            besu-etc-${{ matrix.tag }}.zip.sha256
+            besu-etc-plugin-*.jar
+            besu-etc-plugin-${{ matrix.tag }}.jar.sha256
+
+  reconcile:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DECLARED: ${{ needs.plan.outputs.tags }}
+    steps:
+      - name: Delete releases not declared in plan
+        run: |
+          declared=$(echo "$DECLARED" | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))')
+          existing=$(gh release list --json tagName --jq '.[].tagName')
+          for tag in $existing; do
+            case "$tag" in
+              *-etc|*-etc-*) ;;
+              *) continue ;;
+            esac
+            if ! echo "$declared" | grep -qx "$tag"; then
+              echo "Deleting stale release: $tag"
+              gh release delete "$tag" --cleanup-tag --yes
+            fi
+          done
