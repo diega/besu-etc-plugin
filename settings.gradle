@@ -1,0 +1,30 @@
+rootProject.name = 'besu-etc-plugin'
+
+// Composite build: links against local Besu checkout for
+// IDE navigation (Ctrl+click → fork source) and compilation
+// without publishToMavenLocal.
+if (file('local.properties').exists()) {
+  def props = new Properties()
+  props.load(file('local.properties').newReader())
+  def besuDir = props.getProperty('besuDir')
+  if (besuDir && file(besuDir).exists()) {
+    gradle.ext.besuCompositeBuildDir = besuDir
+    includeBuild(besuDir) {
+      dependencySubstitution {
+        // public modules (group org.hyperledger.besu)
+        substitute module('org.hyperledger.besu:besu-plugin-api') using project(':plugin-api')
+        substitute module('org.hyperledger.besu:besu-evm') using project(':evm')
+        substitute module('org.hyperledger.besu:besu-datatypes') using project(':datatypes')
+        // internal modules (group org.hyperledger.besu.internal)
+        substitute module('org.hyperledger.besu.internal:besu-ethereum-core') using project(':ethereum:core')
+        substitute module('org.hyperledger.besu.internal:besu-ethereum-rlp') using project(':ethereum:rlp')
+        substitute module('org.hyperledger.besu.internal:besu-ethereum-eth') using project(':ethereum:eth')
+        substitute module('org.hyperledger.besu.internal:besu-ethereum-p2p') using project(':ethereum:p2p')
+        substitute module('org.hyperledger.besu.internal:besu-config') using project(':config')
+        substitute module('org.hyperledger.besu.internal:besu-crypto-algorithms') using project(':crypto:algorithms')
+        substitute module('org.hyperledger.besu.internal:besu-util') using project(':util')
+        substitute module('org.hyperledger.besu.internal:besu-testutil') using project(':testutil')
+      }
+    }
+  }
+}
