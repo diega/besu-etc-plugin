@@ -23,11 +23,8 @@ jobs:
             besu_branch: 26.4.0-RC1-plugin-extensions
             besu_version: 26.4.0-RC1
           experimental:
-            - name: on-10220
-              besu_branch: plugin-extensions-on-10220
-              besu_version: 26.3.0-SNAPSHOT
-            - name: on-10220-plus-storageroot-fix-and-10235
-              besu_branch: plugin-extensions-on-10220-plus-storageroot-fix-and-10235
+            - name: on-10220-on-10235
+              besu_branch: plugin-extensions-on-10220-on-10235
               besu_version: 26.3.0-SNAPSHOT
           YAML
           python3 <<'PY'
