@@ -14,14 +14,10 @@
  */
 package org.hyperledger.besu.plugins.classic.protocol;
 
-import static org.hyperledger.besu.ethereum.mainnet.MainnetProtocolSpecs.powHasher;
-
 import org.hyperledger.besu.config.GenesisConfigOptions;
-import org.hyperledger.besu.config.PowAlgorithm;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.core.feemarket.CoinbaseFeePriceCalculator;
 import org.hyperledger.besu.ethereum.mainnet.DifficultyCalculator;
-import org.hyperledger.besu.ethereum.mainnet.MainnetBlockHeaderValidator;
 import org.hyperledger.besu.ethereum.mainnet.MainnetTransactionProcessor;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpecBuilder;
 import org.hyperledger.besu.ethereum.mainnet.TransactionValidatorFactory;
@@ -32,6 +28,9 @@ import org.hyperledger.besu.evm.gascalculator.LondonGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.ShanghaiGasCalculator;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.evm.processor.ContractCreationProcessor;
+import org.hyperledger.besu.plugins.classic.protocol.pow.ClassicBlockHeaderValidators;
+import org.hyperledger.besu.plugins.classic.protocol.pow.EpochCalculator;
+import org.hyperledger.besu.plugins.classic.protocol.pow.PoWHasher;
 
 import java.math.BigInteger;
 import java.util.HashMap;
@@ -116,14 +115,23 @@ public class ClassicProtocolSpecs {
         difficultyCalculatorAdapter(ClassicDifficultyCalculators.DIFFICULTY_BOMB_REMOVED);
     final Function<ProtocolSpecBuilder, ProtocolSpecBuilder> eip100Difficulty =
         difficultyCalculatorAdapter(ClassicDifficultyCalculators.EIP100);
+    final Function<ProtocolSpecBuilder, ProtocolSpecBuilder> frontierHeaders =
+        ClassicProtocolSpecs::applyFrontierHeaders;
     final Function<ProtocolSpecBuilder, ProtocolSpecBuilder> thanosHeaders =
         ClassicProtocolSpecs::applyThanosHeaders;
 
     // --- ETC Mainnet adapters (only if the relevant blocks are configured) ---
 
+    // Frontier (block 0): every ETC era is PoW. Upstream's mainnet header validators no longer
+    // carry the Ethash PoW / calculated-difficulty rules after the PoW removal
+    // (#10656/#10659/#10662), so the plugin installs them for all milestones. Floor semantics mean
+    // each adapter is self-contained, so these header validators are re-applied in every adapter up
+    // to Thanos; here they cover Frontier and Homestead with the default (30k) epoch calculator.
+    adapters.put(0L, frontierHeaders);
+
     // TangerineWhistle (ecip1015Block / tangerineWhistleBlock): replay protection
     final OptionalLong twBlock = config.getTangerineWhistleBlockNumber();
-    twBlock.ifPresent(block -> adapters.put(block, replayProtection));
+    twBlock.ifPresent(block -> adapters.put(block, replayProtection.andThen(frontierHeaders)));
 
     // DieHard: + DieHardGasCalculator (EIP-160 equivalent)
     etcConfig
@@ -131,7 +139,11 @@ public class ClassicProtocolSpecs {
         .ifPresent(
             block ->
                 adapters.put(
-                    block, replayProtection.andThen(dieHardGas).andThen(pausedDifficulty)));
+                    block,
+                    replayProtection
+                        .andThen(dieHardGas)
+                        .andThen(pausedDifficulty)
+                        .andThen(frontierHeaders)));
 
     // Gotham: + ClassicBlockProcessor (ECIP-1017 era-based rewards)
     etcConfig
@@ -143,7 +155,8 @@ public class ClassicProtocolSpecs {
                     replayProtection
                         .andThen(dieHardGas)
                         .andThen(classicBP)
-                        .andThen(delayedDifficulty)));
+                        .andThen(delayedDifficulty)
+                        .andThen(frontierHeaders)));
 
     // DefuseBomb (ECIP-1041): remove difficulty bomb
     etcConfig
@@ -155,11 +168,14 @@ public class ClassicProtocolSpecs {
                     replayProtection
                         .andThen(dieHardGas)
                         .andThen(classicBP)
-                        .andThen(removedDifficulty)));
+                        .andThen(removedDifficulty)
+                        .andThen(frontierHeaders)));
 
     // Atlantis (byzantiumBlock): reset to ClassicBP + EIP-100 difficulty
     final OptionalLong byzantiumBlock = config.getByzantiumBlockNumber();
-    byzantiumBlock.ifPresent(block -> adapters.put(block, classicBP.andThen(eip100Difficulty)));
+    byzantiumBlock.ifPresent(
+        block ->
+            adapters.put(block, classicBP.andThen(eip100Difficulty).andThen(frontierHeaders)));
 
     // Thanos: ClassicBP + ECIP-1099 epoch/header validation + EIP-100 difficulty
     etcConfig
@@ -242,15 +258,26 @@ public class ClassicProtocolSpecs {
   }
 
   private static ProtocolSpecBuilder applyThanosHeaders(final ProtocolSpecBuilder builder) {
+    // From Thanos (ECIP-1099) the Ethash epoch length doubles to 60,000 blocks.
+    return applyPowHeaders(builder, new Ecip1099EpochCalculator());
+  }
+
+  private static ProtocolSpecBuilder applyFrontierHeaders(final ProtocolSpecBuilder builder) {
+    // Frontier sets the original 30,000-block Ethash epoch length, kept until Thanos (ECIP-1099).
+    return applyPowHeaders(builder, new EpochCalculator.DefaultEpochCalculator());
+  }
+
+  private static ProtocolSpecBuilder applyPowHeaders(
+      final ProtocolSpecBuilder builder, final EpochCalculator epochCalculator) {
     return builder
         .blockHeaderValidatorBuilder(
             (feeMarket, gasCalculator, gasLimitCalculator) ->
-                MainnetBlockHeaderValidator.createPgaBlockHeaderValidator(
-                    new Ecip1099EpochCalculator(), powHasher(PowAlgorithm.ETHASH)))
+                ClassicBlockHeaderValidators.createPgaBlockHeaderValidator(
+                    epochCalculator, PoWHasher.ETHASH_LIGHT))
         .ommerHeaderValidatorBuilder(
             (feeMarket, gasCalculator, gasLimitCalculator) ->
-                MainnetBlockHeaderValidator.createLegacyFeeMarketOmmerValidator(
-                    new Ecip1099EpochCalculator(), powHasher(PowAlgorithm.ETHASH)));
+                ClassicBlockHeaderValidators.createLegacyFeeMarketOmmerValidator(
+                    epochCalculator, PoWHasher.ETHASH_LIGHT));
   }
 
   private static ProtocolSpecBuilder applyMystique(final ProtocolSpecBuilder builder) {

@@ -14,8 +14,8 @@
  */
 package org.hyperledger.besu.plugins.classic.protocol;
 
-import org.hyperledger.besu.ethereum.mainnet.EpochCalculator;
-import org.hyperledger.besu.ethereum.mainnet.EthHash;
+import org.hyperledger.besu.plugins.classic.protocol.pow.EpochCalculator;
+import org.hyperledger.besu.plugins.classic.protocol.pow.EthHash;
 
 /**
  * ECIP-1099 epoch calculator that doubles the epoch length from 30,000 to 60,000 blocks. Originally

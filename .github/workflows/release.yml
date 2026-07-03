@@ -21,11 +21,8 @@ jobs:
           cat > /tmp/releases.yml <<'YAML'
           stable:
             besu_branch: plugin-extensions
-            besu_version: 26.6.0-SNAPSHOT
-          experimental:
-            - name: on-10220
-              besu_branch: plugin-extensions-on-10220
-              besu_version: 26.6.0-SNAPSHOT
+            besu_version: 26.7.0-etc-SNAPSHOT
+          experimental: []
           YAML
           python3 <<'PY'
           import yaml, json, os
@@ -37,7 +34,7 @@ jobs:
             'experimental': False,
             'besu_branch': s['besu_branch'],
             'besu_version': s['besu_version'],
-            'tag': f"{s['besu_version']}-etc",
+            'tag': s['besu_version'],
           })
           for e in cfg.get('experimental') or []:
             items.append({
@@ -45,9 +42,12 @@ jobs:
               'experimental': True,
               'besu_branch': e['besu_branch'],
               'besu_version': e['besu_version'],
-              'tag': f"{e['besu_version']}-etc-{e['name']}",
+              'tag': f"{e['besu_version']}-{e['name']}",
             })
           tags = [it['tag'] for it in items]
+          # Protected releases: kept by reconcile but not (re)built by this workflow
+          # (e.g. 26.6.1-etc is the pre-removal line, built from its own tag, not from main).
+          tags += ['26.6.1-etc']
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
             f.write(f"matrix={json.dumps({'include': items})}\n")
             f.write(f"tags={json.dumps(tags)}\n")

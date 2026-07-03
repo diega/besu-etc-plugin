@@ -14,12 +14,12 @@
  */
 package org.hyperledger.besu.plugins.classic.protocol;
 
-import static org.hyperledger.besu.evm.MainnetEVMs.registerIstanbulOperations;
-
 import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.EvmSpecVersion;
+import org.hyperledger.besu.evm.MainnetEVMs;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
+import org.hyperledger.besu.evm.operation.Operation;
 import org.hyperledger.besu.evm.operation.OperationRegistry;
 import org.hyperledger.besu.evm.operation.Push0Operation;
 
@@ -61,8 +61,13 @@ public class ClassicEVMs {
       final GasCalculator gasCalculator,
       final BigInteger chainId,
       final EvmConfiguration evmConfiguration) {
-    OperationRegistry registry = new OperationRegistry();
-    registerIstanbulOperations(registry, gasCalculator, chainId, evmConfiguration);
+    final OperationRegistry registry = new OperationRegistry();
+    for (final Operation operation :
+        MainnetEVMs.istanbul(gasCalculator, chainId, evmConfiguration).getOperationsUnsafe()) {
+      if (operation != null) {
+        registry.put(operation);
+      }
+    }
     registry.put(new Push0Operation(gasCalculator));
     return registry;
   }

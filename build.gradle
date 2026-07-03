@@ -66,6 +66,9 @@ dependencies {
   implementation 'com.google.guava:guava:33.4.2-jre'
   implementation 'io.consensys.tuweni:tuweni-bytes:2.7.2'
   implementation 'io.consensys.tuweni:tuweni-units:2.7.2'
+  // ClassicGenesisConfig parses genesis JSON directly; declared explicitly because besu-config
+  // exposes Jackson only as an implementation (non-transitive) dependency.
+  implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.1'
 
   // Test
   testImplementation "org.hyperledger.besu.internal:besu-testutil:${besuVersion}"

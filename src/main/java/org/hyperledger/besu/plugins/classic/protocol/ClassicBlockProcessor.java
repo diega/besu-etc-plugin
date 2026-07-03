@@ -15,34 +15,23 @@
 package org.hyperledger.besu.plugins.classic.protocol;
 
 import org.hyperledger.besu.datatypes.Wei;
-import org.hyperledger.besu.ethereum.core.BlockHeader;
-import org.hyperledger.besu.ethereum.mainnet.AbstractBlockProcessor;
 import org.hyperledger.besu.ethereum.mainnet.AbstractBlockProcessor.TransactionReceiptFactory;
 import org.hyperledger.besu.ethereum.mainnet.BalConfiguration;
+import org.hyperledger.besu.ethereum.mainnet.MainnetBlockProcessor;
 import org.hyperledger.besu.ethereum.mainnet.MainnetTransactionProcessor;
 import org.hyperledger.besu.ethereum.mainnet.MiningBeneficiaryCalculator;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
-import org.hyperledger.besu.evm.account.MutableAccount;
-import org.hyperledger.besu.evm.worldstate.WorldUpdater;
-import org.hyperledger.besu.plugin.services.worldstate.MutableWorldState;
 
 import java.math.BigInteger;
-import java.util.List;
 import java.util.OptionalLong;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class ClassicBlockProcessor extends AbstractBlockProcessor {
-
-  private static final Logger LOG = LoggerFactory.getLogger(ClassicBlockProcessor.class);
+public class ClassicBlockProcessor extends MainnetBlockProcessor {
 
   private static final long DEFAULT_ERA_LENGTH = 5_000_000L;
 
-  // Vendored from AbstractBlockProcessor (package-private upstream): max ommer generation gap.
-  private static final int MAX_GENERATION = 6;
-
   private final long eraLength;
+
+  private final Wei blockReward;
 
   public ClassicBlockProcessor(
       final MainnetTransactionProcessor transactionProcessor,
@@ -61,41 +50,8 @@ public class ClassicBlockProcessor extends AbstractBlockProcessor {
         skipZeroBlockRewards,
         protocolSchedule,
         balConfiguration);
+    this.blockReward = blockReward;
     eraLength = eraLen.orElse(DEFAULT_ERA_LENGTH);
-  }
-
-  @Override
-  protected boolean rewardCoinbase(
-      final MutableWorldState worldState,
-      final BlockHeader header,
-      final List<BlockHeader> ommers,
-      final boolean skipZeroBlockRewards) {
-    if (skipZeroBlockRewards && blockReward.isZero()) {
-      return true;
-    }
-    final Wei coinbaseReward = getCoinbaseReward(blockReward, header.getNumber(), ommers.size());
-    final WorldUpdater updater = worldState.updater();
-    final MutableAccount coinbase = updater.getOrCreate(header.getCoinbase());
-
-    coinbase.incrementBalance(coinbaseReward);
-    for (final BlockHeader ommerHeader : ommers) {
-      if (ommerHeader.getNumber() - header.getNumber() > MAX_GENERATION) {
-        LOG.warn(
-            "Block processing error: ommer block number {} more than {} generations current block number {}",
-            ommerHeader.getNumber(),
-            MAX_GENERATION,
-            header.getNumber());
-        return false;
-      }
-
-      final MutableAccount ommerCoinbase = updater.getOrCreate(ommerHeader.getCoinbase());
-      final Wei ommerReward =
-          getOmmerReward(blockReward, header.getNumber(), ommerHeader.getNumber());
-      ommerCoinbase.incrementBalance(ommerReward);
-    }
-
-    updater.commit();
-    return true;
   }
 
   // getUncleInclusionReword return reward for including
