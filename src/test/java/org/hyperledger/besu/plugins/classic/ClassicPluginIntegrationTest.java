@@ -25,13 +25,12 @@ import org.hyperledger.besu.ethereum.mainnet.BalConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.DifficultyCalculator;
 import org.hyperledger.besu.ethereum.mainnet.MainnetProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomizer;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.plugin.ServiceManager;
-import org.hyperledger.besu.plugin.services.ForkIdProvider;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugins.classic.protocol.ClassicDifficultyCalculators;
 
-import java.math.BigInteger;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -54,17 +53,26 @@ class ClassicPluginIntegrationTest {
           + "}";
 
   @Test
-  void registerPublishesEtcScopedForkIdProvider() {
+  void registerPublishesEtcScopedProtocolScheduleCustomizer() {
     final ServiceManager.SimpleServiceManager serviceManager =
         new ServiceManager.SimpleServiceManager();
     new ClassicPlugin().register(serviceManager);
 
-    final ForkIdProvider forkIdProvider =
-        serviceManager.getService(ForkIdProvider.class).orElseThrow();
+    final ProtocolScheduleCustomizer customizer =
+        serviceManager.getService(ProtocolScheduleCustomizer.class).orElseThrow();
 
-    assertThat(forkIdProvider.forkScheduleFor(BigInteger.valueOf(61))).isPresent();
-    assertThat(forkIdProvider.forkScheduleFor(BigInteger.valueOf(63))).isPresent();
-    assertThat(forkIdProvider.forkScheduleFor(BigInteger.ONE)).isEmpty();
+    assertThat(
+            customizer
+                .forkIdActivations(
+                    GenesisConfig.fromConfig(MINIMAL_ETC_GENESIS_CONFIG).getConfigOptions())
+                .blockNumbers())
+        .isNotEmpty();
+    assertThat(
+            customizer
+                .forkIdActivations(
+                    GenesisConfig.fromConfig("{\"config\":{\"chainId\":1}}").getConfigOptions())
+                .blockNumbers())
+        .isEmpty();
   }
 
   @Test

@@ -19,13 +19,11 @@ import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.BlockchainService;
-import org.hyperledger.besu.plugin.services.ForkIdProvider;
 import org.hyperledger.besu.plugin.services.NetworkProvider;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugins.classic.chain.ChainTracker;
 import org.hyperledger.besu.plugins.classic.config.ClassicOptions;
-import org.hyperledger.besu.plugins.classic.protocol.ClassicForkIdProvider;
-import org.hyperledger.besu.plugins.classic.protocol.ClassicProtocolSpecs;
+import org.hyperledger.besu.plugins.classic.protocol.ClassicProtocolScheduleCustomizer;
 
 import java.math.BigInteger;
 
@@ -76,10 +74,9 @@ public class ClassicPlugin implements BesuPlugin {
     context.addService(NetworkProvider.class, new ClassicNetworkProvider());
 
     // Inject ETC-specific protocol schedule adapters into Besu's native validation/import flow.
-    context.addService(ProtocolScheduleCustomizer.class, ClassicProtocolSpecs::createAdapters);
-
-    // Provide ETC-specific fork blocks for EIP-2124 fork ID computation.
-    context.addService(ForkIdProvider.class, new ClassicForkIdProvider());
+    // The customizer also derives the EIP-2124 fork ID from the same ETC fork boundaries.
+    context.addService(
+        ProtocolScheduleCustomizer.class, new ClassicProtocolScheduleCustomizer());
 
     // Register plugin-specific CLI options.
     context
