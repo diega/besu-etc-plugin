@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import org.hyperledger.besu.config.GenesisConfig;
+import org.hyperledger.besu.config.GenesisConfigOptions;
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
@@ -40,11 +41,15 @@ import org.hyperledger.besu.plugins.classic.ClassicPlugin;
 import org.hyperledger.besu.plugins.classic.protocol.Ecip1099EpochCalculator;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import com.google.common.io.Resources;
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.BeforeAll;
+import org.hyperledger.besu.plugins.classic.protocol.ClassicProtocolScheduleCustomizer;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -60,21 +65,6 @@ import org.junit.jupiter.api.Test;
 class ClassicPowValidationTest {
 
   // ETC milestones, matching ClassicProtocolScheduleGoldenTest. Block 300006 is in the Frontier era.
-  private static final String ETC_GENESIS_CONFIG =
-      "{"
-          + "\"config\":{"
-          + "\"chainId\":61,"
-          + "\"homesteadBlock\":1150000,"
-          + "\"eip150Block\":2500000,"
-          + "\"eip158Block\":3000000,"
-          + "\"byzantiumBlock\":8772000,"
-          + "\"constantinopleBlock\":9573000,"
-          + "\"petersburgBlock\":9573000,"
-          + "\"istanbulBlock\":10500839,"
-          + "\"berlinBlock\":13189133"
-          + "}"
-          + "}";
-
   private static BlockHeader parent; // block 300005
   private static BlockHeader header; // block 300006
 
@@ -174,11 +164,9 @@ class ClassicPowValidationTest {
   }
 
   private static ProtocolSchedule buildClassicSchedule() {
-    final ServiceManager.SimpleServiceManager serviceManager =
-        new ServiceManager.SimpleServiceManager();
-    new ClassicPlugin().register(serviceManager);
+    final GenesisConfigOptions config = etcMainnetConfig();
     return MainnetProtocolSchedule.fromConfig(
-        GenesisConfig.fromConfig(ETC_GENESIS_CONFIG).getConfigOptions(),
+        config,
         Optional.empty(),
         Optional.of(EvmConfiguration.DEFAULT),
         MiningConfiguration.MINING_DISABLED,
@@ -186,7 +174,17 @@ class ClassicPowValidationTest {
         false,
         BalConfiguration.DEFAULT,
         mock(MetricsSystem.class),
-        Optional.of(serviceManager));
+        new ClassicProtocolScheduleCustomizer().customize(config).orElseThrow());
+  }
+
+  /** The genesis the plugin ships, which is where its ETC activation keys live. */
+  private static GenesisConfigOptions etcMainnetConfig() {
+    try (InputStream is = ClassicPowValidationTest.class.getResourceAsStream("/classic.json")) {
+      return GenesisConfig.fromConfig(new String(is.readAllBytes(), StandardCharsets.UTF_8))
+          .getConfigOptions();
+    } catch (final Exception e) {
+      throw new IllegalStateException("Unable to load /classic.json", e);
+    }
   }
 
   private static BlockHeader readHeader(final long number) throws IOException {

@@ -17,7 +17,7 @@ package org.hyperledger.besu.plugins.classic.protocol;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import org.hyperledger.besu.config.GenesisConfig;
+import org.hyperledger.besu.config.GenesisConfigOptions;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
@@ -34,9 +34,7 @@ import org.hyperledger.besu.evm.gascalculator.PetersburgGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.ShanghaiGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.TangerineWhistleGasCalculator;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
-import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
-import org.hyperledger.besu.plugins.classic.ClassicPlugin;
 
 import java.util.Optional;
 
@@ -56,23 +54,6 @@ import org.junit.jupiter.api.Test;
  * ETC-specific component.
  */
 class ClassicProtocolScheduleGoldenTest {
-
-  // ETC milestones (mainnet block numbers). ETC-only blocks (dieHard, gotham, thanos, mystique,
-  // spiral) are sourced by the adapters from the bundled classic.json, not from this config.
-  private static final String ETC_GENESIS_CONFIG =
-      "{"
-          + "\"config\":{"
-          + "\"chainId\":61,"
-          + "\"homesteadBlock\":1150000,"
-          + "\"eip150Block\":2500000,"
-          + "\"eip158Block\":3000000,"
-          + "\"byzantiumBlock\":8772000,"
-          + "\"constantinopleBlock\":9573000,"
-          + "\"petersburgBlock\":9573000,"
-          + "\"istanbulBlock\":10500839,"
-          + "\"berlinBlock\":13189133"
-          + "}"
-          + "}";
 
   private static final long TANGERINE_WHISTLE = 2_500_000L;
   private static final long DIE_HARD = 3_000_000L;
@@ -144,11 +125,9 @@ class ClassicProtocolScheduleGoldenTest {
   }
 
   private ProtocolSchedule buildClassicSchedule() {
-    final ServiceManager.SimpleServiceManager serviceManager =
-        new ServiceManager.SimpleServiceManager();
-    new ClassicPlugin().register(serviceManager);
+    final GenesisConfigOptions config = EtcGenesis.mainnet();
     return MainnetProtocolSchedule.fromConfig(
-        GenesisConfig.fromConfig(ETC_GENESIS_CONFIG).getConfigOptions(),
+        config,
         Optional.empty(),
         Optional.of(EvmConfiguration.DEFAULT),
         MiningConfiguration.MINING_DISABLED,
@@ -156,7 +135,7 @@ class ClassicProtocolScheduleGoldenTest {
         false,
         BalConfiguration.DEFAULT,
         mock(MetricsSystem.class),
-        Optional.of(serviceManager));
+        new ClassicProtocolScheduleCustomizer().customize(config).orElseThrow());
   }
 
   private ProtocolSpec specAt(final ProtocolSchedule schedule, final long blockNumber) {

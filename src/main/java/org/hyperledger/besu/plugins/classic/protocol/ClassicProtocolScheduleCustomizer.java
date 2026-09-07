@@ -14,18 +14,18 @@
  */
 package org.hyperledger.besu.plugins.classic.protocol;
 
-import org.hyperledger.besu.config.ForkIdActivations;
 import org.hyperledger.besu.config.GenesisConfigOptions;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomization;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomizer;
-import org.hyperledger.besu.ethereum.mainnet.ProtocolSpecBuilder;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolSpecModification;
 
-import java.util.Map;
-import java.util.function.Function;
+import java.util.List;
+import java.util.Optional;
 
 /**
- * ETC protocol-schedule customizer. Contributes the ETC hardfork adapters and the matching EIP-2124
- * fork activations, so the advertised fork ID is derived from the same source that defines the ETC
- * fork boundaries.
+ * ETC protocol-schedule customizer. Contributes the ETC hardfork rules; Besu derives the EIP-2124
+ * fork ID from the activations those rules carry, so the schedule the node runs and the one it
+ * advertises cannot state different boundaries.
  */
 public class ClassicProtocolScheduleCustomizer implements ProtocolScheduleCustomizer {
 
@@ -33,17 +33,11 @@ public class ClassicProtocolScheduleCustomizer implements ProtocolScheduleCustom
   public ClassicProtocolScheduleCustomizer() {}
 
   @Override
-  public Map<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> createAdapters(
-      final GenesisConfigOptions config) {
-    return ClassicProtocolSpecs.createAdapters(config);
-  }
-
-  @Override
-  public ForkIdActivations forkIdActivations(final GenesisConfigOptions config) {
-    return config
-        .getChainId()
-        .flatMap(ClassicGenesisConfig::fromChainId)
-        .map(etc -> ForkIdActivations.ofBlockNumbers(etc.getForkIdBlockNumbers()))
-        .orElseGet(ForkIdActivations::empty);
+  public Optional<ProtocolScheduleCustomization> customize(final GenesisConfigOptions config) {
+    final List<ProtocolSpecModification> modifications =
+        ClassicProtocolSpecs.createModifications(config);
+    return modifications.isEmpty()
+        ? Optional.empty()
+        : Optional.of(new ProtocolScheduleCustomization("classic", modifications));
   }
 }

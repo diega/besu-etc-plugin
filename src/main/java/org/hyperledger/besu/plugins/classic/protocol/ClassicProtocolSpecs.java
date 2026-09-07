@@ -14,12 +14,15 @@
  */
 package org.hyperledger.besu.plugins.classic.protocol;
 
+import static org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleActivation.blockNumber;
+
 import org.hyperledger.besu.config.GenesisConfigOptions;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.core.feemarket.CoinbaseFeePriceCalculator;
 import org.hyperledger.besu.ethereum.mainnet.DifficultyCalculator;
 import org.hyperledger.besu.ethereum.mainnet.MainnetTransactionProcessor;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpecBuilder;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolSpecModification;
 import org.hyperledger.besu.ethereum.mainnet.TransactionValidatorFactory;
 import org.hyperledger.besu.evm.contractvalidation.MaxCodeSizeRule;
 import org.hyperledger.besu.evm.contractvalidation.PrefixCodeRule;
@@ -33,21 +36,25 @@ import org.hyperledger.besu.plugins.classic.protocol.pow.EpochCalculator;
 import org.hyperledger.besu.plugins.classic.protocol.pow.PoWHasher;
 
 import java.math.BigInteger;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /**
- * Creates protocol spec adapter functions for Ethereum Classic hardforks. Each adapter modifies the
+ * Creates the protocol-spec modifications for Ethereum Classic hardforks. Each overlay modifies the
  * {@link ProtocolSpecBuilder} provided by the mainnet protocol schedule to apply ETC-specific
  * changes (gas calculators, block processors, EVM rules).
  *
- * <p>Adapters use floor semantics: an adapter registered at block N applies to all milestones at
- * block numbers &gt;= N until the next adapter entry. Each adapter is self-contained and
- * accumulates all changes needed for its range.
+ * <p>Rules are described as eras: an era opened at block N holds until the next one, and each is
+ * self-contained, stating the whole of its range rather than what the range before it lacked. One
+ * modification is emitted per announced fork, carrying the overlay of the era that fork falls in,
+ * so the forks that change no ETC rule keep the rules in force rather than dropping them.
  *
  * <h3>ETC ↔ ETH Hardfork Mapping</h3>
  *
@@ -57,17 +64,17 @@ import java.util.function.Function;
  * <pre>
  * ETC Hardfork        Block (mainnet)  Mainnet Key              ETC-only Key       Adapter Changes
  * ────────────────     ───────────────  ─────────────────────    ────────────────   ──────────────────────────────
- * Frontier             0               (implicit)               —                  (identity)
- * Homestead            1,150,000       homesteadBlock           —                  (identity)
+ * Frontier             0               (implicit)               —                  PoW header validators
+ * Homestead            1,150,000       homesteadBlock           —                  (restates Frontier)
  * TangerineWhistle     2,500,000       tangerineWhistleBlock    ecip1015Block      + replay protection (ECIP-1015)
  * DieHard              3,000,000       —                        dieHardBlock       + DieHardGasCalculator (EIP-160)
  * Gotham               5,000,000       —                        gothamBlock        + ClassicBlockProcessor (ECIP-1017) + delayed bomb
  * DefuseBomb           5,900,000       —                        ecip1041Block      + removed bomb (ECIP-1041)
  * Atlantis             8,772,000       byzantiumBlock           atlantisBlock      reset: ClassicBP + EIP-100 difficulty
- * Agharta              9,573,000       constantinople+petersburg aghartaBlock      (inherits ClassicBP)
- * Phoenix              10,500,839      istanbulBlock            phoenixBlock       (inherits ClassicBP)
+ * Agharta              9,573,000       constantinople+petersburg aghartaBlock      (restates Atlantis)
+ * Phoenix              10,500,839      istanbulBlock            phoenixBlock       (restates Atlantis)
  * Thanos               11,700,000      —                        thanosBlock        + ECIP-1099 epoch headers + EIP-100 difficulty
- * Magneto              13,189,133      berlinBlock              magnetoBlock       (inherits ClassicBP+Thanos)
+ * Magneto              13,189,133      berlinBlock              magnetoBlock       (restates Thanos)
  * Mystique             14,525,000      —                        mystiqueBlock      + LondonGasCalc + PrefixCodeRule + EIP-100 difficulty
  * Spiral               19,250,000      —                        spiralBlock        + ShanghaiGasCalc + PUSH0 + warm coinbase + EIP-100 difficulty
  * </pre>
@@ -75,30 +82,91 @@ import java.util.function.Function;
 public class ClassicProtocolSpecs {
   private static final Wei MAX_BLOCK_REWARD = Wei.fromEth(5);
 
+  /**
+   * ETC activation keys Besu does not define, read from the genesis config section next to the
+   * built-in forks. Every ETC fork block reaches the schedule through this list or through a key
+   * Besu already recognizes.
+   */
+  private static final List<String> ETC_FORK_KEYS =
+      List.of(
+          "ecip1015Block",
+          "dieHardBlock",
+          "gothamBlock",
+          "ecip1041Block",
+          "atlantisBlock",
+          "aghartaBlock",
+          "phoenixBlock",
+          "thanosBlock",
+          "magnetoBlock",
+          "mystiqueBlock",
+          "spiralBlock");
+
   private ClassicProtocolSpecs() {}
 
   /**
-   * Creates the map of block-number-keyed adapter functions for the given ETC genesis config.
+   * Creates the ETC protocol-spec modifications for the given genesis config.
+   *
+   * <p>Besu advertises one EIP-2124 fork per modification, so every fork ETC announces needs one,
+   * including the forks that change no ETC rule. A modification replaces its predecessor rather
+   * than adding to it, so an announced fork left out would drop its era's overlay, and one declared
+   * as identity would drop it too. Agharta, Phoenix and Magneto therefore restate the overlay of
+   * the era they fall in, which is also what floor semantics gave them before.
    *
    * @param config the genesis configuration options
-   * @return a map from block number to adapter function
+   * @return the modifications, ascending by activation, or empty for non-ETC chains
    */
-  public static Map<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> createAdapters(
+  public static List<ProtocolSpecModification> createModifications(
       final GenesisConfigOptions config) {
-    final Map<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> adapters = new HashMap<>();
+    final NavigableMap<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> eras =
+        createEras(config);
+    if (eras.isEmpty()) {
+      return List.of();
+    }
+    // One overlay instance per era, so a fork that restates an era carries the very same rules.
+    final NavigableMap<Long, UnaryOperator<ProtocolSpecBuilder>> overlays = new TreeMap<>();
+    eras.forEach((block, era) -> overlays.put(block, era::apply));
+
+    return announcedForks(config, eras).stream()
+        .map(
+            block ->
+                new ProtocolSpecModification(
+                    blockNumber(block), overlays.floorEntry(block).getValue()))
+        .toList();
+  }
+
+  /**
+   * The blocks ETC announces as forks, together with the blocks its rules change at. Genesis is
+   * included so the first era has a modification; the fork ID drops it, since the genesis hash
+   * already covers those rules.
+   */
+  private static SortedSet<Long> announcedForks(
+      final GenesisConfigOptions config,
+      final NavigableMap<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> eras) {
+    final SortedSet<Long> forks = new TreeSet<>(eras.keySet());
+    forks.addAll(config.getForkBlockNumbers());
+    ETC_FORK_KEYS.forEach(key -> config.getCustomConfigLong(key).ifPresent(forks::add));
+    return forks;
+  }
+
+  /**
+   * Creates the block-number-keyed map of eras ETC's rules change in. Each overlay is
+   * self-contained: it states the whole of its era rather than what the era before it lacked.
+   *
+   * @param config the genesis configuration options
+   * @return a map from block number to overlay, empty for non-ETC chains
+   */
+  static NavigableMap<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> createEras(
+      final GenesisConfigOptions config) {
+    final NavigableMap<Long, Function<ProtocolSpecBuilder, ProtocolSpecBuilder>> adapters =
+        new TreeMap<>();
     final Optional<BigInteger> chainId = config.getChainId();
 
     // Only create adapters for ETC chains; return empty map for non-ETC networks
-    if (chainId.isEmpty() || !ClassicGenesisConfig.isEtcChainId(chainId.get())) {
+    if (chainId.isEmpty() || !ClassicChains.isEtcChainId(chainId.get())) {
       return adapters;
     }
 
-    // Parse ETC-specific keys directly from genesis JSON (bypasses asMap() whitelist)
-    final ClassicGenesisConfig etcConfig =
-        ClassicGenesisConfig.fromChainId(chainId.get())
-            .orElseThrow(() -> new IllegalStateException("ETC config must have a chainId"));
-
-    final OptionalLong eraRounds = etcConfig.getEcip1017EraRounds();
+    final OptionalLong eraRounds = config.getCustomConfigLong("ecip1017EraRounds");
 
     // Base adapter components
     final Function<ProtocolSpecBuilder, ProtocolSpecBuilder> replayProtection =
@@ -124,9 +192,9 @@ public class ClassicProtocolSpecs {
 
     // Frontier (block 0): every ETC era is PoW. Upstream's mainnet header validators no longer
     // carry the Ethash PoW / calculated-difficulty rules after the PoW removal
-    // (#10656/#10659/#10662), so the plugin installs them for all milestones. Floor semantics mean
-    // each adapter is self-contained, so these header validators are re-applied in every adapter up
-    // to Thanos; here they cover Frontier and Homestead with the default (30k) epoch calculator.
+    // (#10656/#10659/#10662), so the plugin installs them for all milestones. Each era is
+    // self-contained, so these header validators are re-applied in every era up to Thanos; here
+    // they cover Frontier and Homestead with the default (30k) epoch calculator.
     adapters.put(0L, frontierHeaders);
 
     // TangerineWhistle (ecip1015Block / tangerineWhistleBlock): replay protection
@@ -134,8 +202,8 @@ public class ClassicProtocolSpecs {
     twBlock.ifPresent(block -> adapters.put(block, replayProtection.andThen(frontierHeaders)));
 
     // DieHard: + DieHardGasCalculator (EIP-160 equivalent)
-    etcConfig
-        .getDieHardBlock()
+    config
+        .getCustomConfigLong("dieHardBlock")
         .ifPresent(
             block ->
                 adapters.put(
@@ -146,8 +214,8 @@ public class ClassicProtocolSpecs {
                         .andThen(frontierHeaders)));
 
     // Gotham: + ClassicBlockProcessor (ECIP-1017 era-based rewards)
-    etcConfig
-        .getGothamBlock()
+    config
+        .getCustomConfigLong("gothamBlock")
         .ifPresent(
             block ->
                 adapters.put(
@@ -159,8 +227,8 @@ public class ClassicProtocolSpecs {
                         .andThen(frontierHeaders)));
 
     // DefuseBomb (ECIP-1041): remove difficulty bomb
-    etcConfig
-        .getEcip1041Block()
+    config
+        .getCustomConfigLong("ecip1041Block")
         .ifPresent(
             block ->
                 adapters.put(
@@ -178,15 +246,15 @@ public class ClassicProtocolSpecs {
             adapters.put(block, classicBP.andThen(eip100Difficulty).andThen(frontierHeaders)));
 
     // Thanos: ClassicBP + ECIP-1099 epoch/header validation + EIP-100 difficulty
-    etcConfig
-        .getThanosBlock()
+    config
+        .getCustomConfigLong("thanosBlock")
         .ifPresent(
             block ->
                 adapters.put(block, classicBP.andThen(thanosHeaders).andThen(eip100Difficulty)));
 
     // Mystique: ClassicBP + LondonGasCalculator + PrefixCodeRule + EIP-100 difficulty
-    etcConfig
-        .getMystiqueBlock()
+    config
+        .getCustomConfigLong("mystiqueBlock")
         .ifPresent(
             block ->
                 adapters.put(
@@ -197,8 +265,8 @@ public class ClassicProtocolSpecs {
                         .andThen(ClassicProtocolSpecs::applyMystique)));
 
     // Spiral: ClassicBP + ShanghaiGasCalculator + PUSH0 + warm coinbase + EIP-100 difficulty
-    etcConfig
-        .getSpiralBlock()
+    config
+        .getCustomConfigLong("spiralBlock")
         .ifPresent(
             block ->
                 adapters.put(

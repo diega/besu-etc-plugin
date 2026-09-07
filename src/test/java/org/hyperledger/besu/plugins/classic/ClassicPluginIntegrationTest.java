@@ -15,9 +15,11 @@
 package org.hyperledger.besu.plugins.classic;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import org.hyperledger.besu.config.GenesisConfig;
+import org.hyperledger.besu.config.GenesisConfigOptions;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
 import org.hyperledger.besu.ethereum.core.MiningConfiguration;
@@ -25,65 +27,52 @@ import org.hyperledger.besu.ethereum.mainnet.BalConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.DifficultyCalculator;
 import org.hyperledger.besu.ethereum.mainnet.MainnetProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomization;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomizer;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleService;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugins.classic.protocol.ClassicDifficultyCalculators;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
 class ClassicPluginIntegrationTest {
 
-  private static final String MINIMAL_ETC_GENESIS_CONFIG =
-      "{"
-          + "\"config\":{"
-          + "\"chainId\":61,"
-          + "\"homesteadBlock\":1150000,"
-          + "\"eip150Block\":2500000,"
-          + "\"eip158Block\":3000000,"
-          + "\"byzantiumBlock\":8772000,"
-          + "\"constantinopleBlock\":9573000,"
-          + "\"petersburgBlock\":9573000,"
-          + "\"istanbulBlock\":10500839,"
-          + "\"berlinBlock\":13189133"
-          + "}"
-          + "}";
-
   @Test
-  void registerPublishesEtcScopedProtocolScheduleCustomizer() {
-    final ServiceManager.SimpleServiceManager serviceManager =
-        new ServiceManager.SimpleServiceManager();
-    new ClassicPlugin().register(serviceManager);
+  void registerHandsBesuAnEtcScopedCustomizer() {
+    final List<ProtocolScheduleCustomizer> registered = registerPlugin();
 
-    final ProtocolScheduleCustomizer customizer =
-        serviceManager.getService(ProtocolScheduleCustomizer.class).orElseThrow();
-
+    assertThat(registered).hasSize(1);
+    assertThat(registered.get(0).customize(etcMainnetConfig())).isPresent();
     assertThat(
-            customizer
-                .forkIdActivations(
-                    GenesisConfig.fromConfig(MINIMAL_ETC_GENESIS_CONFIG).getConfigOptions())
-                .blockNumbers())
-        .isNotEmpty();
-    assertThat(
-            customizer
-                .forkIdActivations(
-                    GenesisConfig.fromConfig("{\"config\":{\"chainId\":1}}").getConfigOptions())
-                .blockNumbers())
+            registered
+                .get(0)
+                .customize(GenesisConfig.fromConfig("{\"config\":{\"chainId\":1}}").getConfigOptions()))
         .isEmpty();
   }
 
   @Test
-  void registerCustomizesCoreProtocolScheduleWithClassicDifficultyRules() {
-    final ServiceManager.SimpleServiceManager serviceManager =
-        new ServiceManager.SimpleServiceManager();
-    new ClassicPlugin().register(serviceManager);
+  void registerFailsOnABesuWithoutTheProtocolScheduleService() {
+    assertThatThrownBy(() -> new ClassicPlugin().register(new ServiceManager.SimpleServiceManager()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("ProtocolScheduleService");
+  }
+
+  @Test
+  void theRegisteredCustomizerCarriesTheClassicDifficultyRules() {
+    final ProtocolScheduleCustomization customization =
+        registerPlugin().get(0).customize(etcMainnetConfig()).orElseThrow();
 
     final ProtocolSchedule protocolSchedule =
         MainnetProtocolSchedule.fromConfig(
-            GenesisConfig.fromConfig(MINIMAL_ETC_GENESIS_CONFIG).getConfigOptions(),
+            etcMainnetConfig(),
             Optional.empty(),
             Optional.of(EvmConfiguration.DEFAULT),
             MiningConfiguration.MINING_DISABLED,
@@ -91,7 +80,7 @@ class ClassicPluginIntegrationTest {
             false,
             BalConfiguration.DEFAULT,
             mock(MetricsSystem.class),
-            Optional.of(serviceManager));
+            customization);
 
     assertDifficultyCalculator(
         protocolSchedule, 3_000_000L, ClassicDifficultyCalculators.DIFFICULTY_BOMB_PAUSED);
@@ -103,6 +92,26 @@ class ClassicPluginIntegrationTest {
     assertDifficultyCalculator(protocolSchedule, 14_525_000L, ClassicDifficultyCalculators.EIP100);
   }
 
+  /** Registers the plugin against a service manager that only records what it registers. */
+  private static List<ProtocolScheduleCustomizer> registerPlugin() {
+    final List<ProtocolScheduleCustomizer> registered = new ArrayList<>();
+    final ServiceManager.SimpleServiceManager serviceManager =
+        new ServiceManager.SimpleServiceManager();
+    serviceManager.addService(
+        ProtocolScheduleService.class, (ProtocolScheduleService) registered::add);
+    new ClassicPlugin().register(serviceManager);
+    return registered;
+  }
+
+  private static GenesisConfigOptions etcMainnetConfig() {
+    try (InputStream is = ClassicPluginIntegrationTest.class.getResourceAsStream("/classic.json")) {
+      return GenesisConfig.fromConfig(new String(is.readAllBytes(), StandardCharsets.UTF_8))
+          .getConfigOptions();
+    } catch (final Exception e) {
+      throw new IllegalStateException("Unable to load /classic.json", e);
+    }
+  }
+
   private void assertDifficultyCalculator(
       final ProtocolSchedule protocolSchedule,
       final long blockNumber,
@@ -111,7 +120,7 @@ class ClassicPluginIntegrationTest {
             protocolSchedule
                 .getByBlockHeader(new BlockHeaderTestFixture().number(blockNumber).buildHeader())
                 .getDifficultyCalculator())
-        .as("block %d", blockNumber)
+        .as("difficulty calculator at block %d", blockNumber)
         .isSameAs(expectedCalculator);
   }
 }

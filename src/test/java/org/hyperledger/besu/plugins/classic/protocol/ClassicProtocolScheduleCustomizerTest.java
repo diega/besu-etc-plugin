@@ -16,70 +16,91 @@ package org.hyperledger.besu.plugins.classic.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.hyperledger.besu.config.ForkIdActivations;
 import org.hyperledger.besu.config.GenesisConfig;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomization;
 
-import java.io.InputStream;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
 class ClassicProtocolScheduleCustomizerTest {
 
+  /**
+   * The fork boundaries ETC mainnet announces, taken from core-geth's own fork ID vectors
+   * (core/forkid/forkid_test.go, the "classic" case). Every peer computes its fork ID from exactly
+   * this list and rejects a handshake that disagrees, so these numbers are the contract rather than
+   * an implementation detail of this plugin.
+   */
+  private static final List<Long> ETC_MAINNET_FORKS =
+      List.of(
+          1_150_000L,
+          2_500_000L,
+          3_000_000L,
+          5_000_000L,
+          5_900_000L,
+          8_772_000L,
+          9_573_000L,
+          10_500_839L,
+          11_700_000L,
+          13_189_133L,
+          14_525_000L,
+          19_250_000L);
+
+  /** The same, for Mordor. Atlantis sits at genesis there, which is not a fork ID boundary. */
+  private static final List<Long> MORDOR_FORKS =
+      List.of(301_243L, 999_983L, 2_520_000L, 3_985_893L, 5_520_000L, 9_957_000L);
+
   private final ClassicProtocolScheduleCustomizer customizer =
       new ClassicProtocolScheduleCustomizer();
 
   @Test
-  void contributesEtcForkBlocksAndNoTimestamps() {
-    final ForkIdActivations activations =
-        customizer.forkIdActivations(genesisFromResource("/classic.json").getConfigOptions());
-
-    assertThat(activations.blockNumbers()).contains(2_500_000L);
-    assertThat(activations.blockNumbers()).doesNotContain(1_920_000L); // DAO point not in ETC
-    assertThat(activations.timestamps()).isEmpty();
+  void declinesNonEtcChains() {
+    assertThat(
+            customizer.customize(
+                GenesisConfig.fromConfig("{\"config\":{\"chainId\":1}}").getConfigOptions()))
+        .isEmpty();
   }
 
   @Test
-  void contributesNothingForNonEtcChains() {
-    final ForkIdActivations activations =
-        customizer.forkIdActivations(
-            GenesisConfig.fromConfig("{\"config\":{\"chainId\":1}}").getConfigOptions());
+  void contributesOnlyBlockActivations() {
+    final ProtocolScheduleCustomization customization = customize("/classic.json");
 
-    assertThat(activations.blockNumbers()).isEmpty();
-    assertThat(activations.timestamps()).isEmpty();
+    assertThat(customization.name()).isEqualTo("classic");
+    assertThat(customization.toForkIdActivations().timestamps()).isEmpty();
+    // the DAO point is ETH's, not ETC's
+    assertThat(customization.toForkIdActivations().blockNumbers()).doesNotContain(1_920_000L);
+  }
+
+  @Test
+  void theAdvertisedForkIdMatchesTheEtcMainnetSchedule() {
+    assertThat(advertisedForkBlocks("/classic.json")).isEqualTo(ETC_MAINNET_FORKS);
+  }
+
+  @Test
+  void theAdvertisedForkIdMatchesTheMordorSchedule() {
+    assertThat(advertisedForkBlocks("/mordor.json")).isEqualTo(MORDOR_FORKS);
   }
 
   /**
-   * The fork ID Besu derives from the customizer must be identical to the one the plugin declared
-   * before the fork-ID-from-rules design: folding the customizer's activations into the ETC genesis
-   * must yield exactly {@link ClassicGenesisConfig#getForkIdBlockNumbers()}. This holds only if the
-   * genesis config's own recognized fork blocks are a subset of that authoritative list — if Besu
-   * ever picked up an extra fork key, the advertised fork ID would drift and this test would fail.
+   * The fork blocks the plugin itself declares, minus genesis, which the fork ID drops because the
+   * genesis hash already covers it.
+   *
+   * <p>Deliberately the customization's own activations rather than what they fold into: several
+   * ETC forks land on a block Besu also recognizes under a mainnet key, so folding would pass even
+   * if the plugin declared none of them. What has to hold is that the plugin states the whole ETC
+   * schedule on its own, since that is what survives Besu changing which keys it reads.
    */
-  @Test
-  void foldedForkIdBlocksMatchTheAuthoritativeEtcSchedule() {
-    final GenesisConfig genesis = genesisFromResource("/classic.json");
-    final ForkIdActivations activations =
-        customizer.forkIdActivations(genesis.getConfigOptions());
-
-    final List<Long> foldedForkBlocks =
-        genesis.withAdditionalForkIdActivations(activations).getConfigOptions().getForkBlockNumbers();
-
-    final List<Long> authoritative =
-        ClassicGenesisConfig.fromChainId(BigInteger.valueOf(61))
-            .orElseThrow()
-            .getForkIdBlockNumbers();
-
-    assertThat(foldedForkBlocks).isEqualTo(authoritative);
+  private List<Long> advertisedForkBlocks(final String resource) {
+    return customize(resource).toForkIdActivations().blockNumbers().stream()
+        .filter(block -> block > 0L)
+        .toList();
   }
 
-  private static GenesisConfig genesisFromResource(final String resource) {
-    try (InputStream is = ClassicProtocolScheduleCustomizerTest.class.getResourceAsStream(resource)) {
-      return GenesisConfig.fromConfig(new String(is.readAllBytes(), StandardCharsets.UTF_8));
-    } catch (final Exception e) {
-      throw new IllegalStateException("Unable to load genesis resource " + resource, e);
-    }
+  private ProtocolScheduleCustomization customize(final String resource) {
+    final Optional<ProtocolScheduleCustomization> customization =
+        customizer.customize(EtcGenesis.config(resource).getConfigOptions());
+    assertThat(customization).as("customization for %s", resource).isPresent();
+    return customization.orElseThrow();
   }
 }

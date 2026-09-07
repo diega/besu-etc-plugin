@@ -1,6 +1,6 @@
 # Besu ETC Plugin
 
-Ethereum Classic ([ETC](https://ethereumclassic.org/)) support plugin for [Hyperledger Besu](https://github.com/hyperledger/besu). It customizes Besu's native protocol schedule and network compatibility behavior for ETC while keeping sync, import, and block validation in the upstream execution pipeline.
+Ethereum Classic ([ETC](https://ethereumclassic.org/)) support plugin for [Hyperledger Besu](https://github.com/hyperledger/besu). It contributes ETC's protocol rules to Besu's native protocol schedule while keeping sync, import, and block validation in the upstream execution pipeline.
 
 ## Architecture
 
@@ -8,19 +8,30 @@ Ethereum Classic ([ETC](https://ethereumclassic.org/)) support plugin for [Hyper
 ClassicPlugin (lifecycle & wiring)
 ├── Chain
 │   └── ChainTracker         — depth-based safe/finalized labels
-├── Protocol
-│   ├── ClassicProtocolSpecs — ETC hardfork schedule (Frontier → Magneto)
-│   ├── ClassicDifficultyCalculators — per-era difficulty formulas
-│   ├── ClassicBlockProcessor— block rewards (5 → 3.2 → 2.56 ETH)
-│   ├── ClassicEVMs          — EVM opcodes per hardfork
-│   ├── ClassicGenesisConfig — genesis JSON handling (fork blocks, era rounds)
-│   └── ClassicForkIdProvider— EIP-2124 fork IDs with ECIP-1091 exclusions
-└── ClassicNetworkProvider   — registers --network=classic / --network=mordor
+└── Protocol
+    ├── ClassicProtocolScheduleCustomizer — what Besu asks for the chain's rules
+    ├── ClassicProtocolSpecs — ETC hardfork schedule (Frontier → Spiral)
+    ├── ClassicDifficultyCalculators — per-era difficulty formulas
+    ├── ClassicBlockProcessor— block rewards (5 → 3.2 → 2.56 ETH)
+    ├── ClassicEVMs          — EVM opcodes per hardfork
+    └── ClassicChains        — the chain IDs this plugin claims
 ```
+
+The plugin declares one modification per fork ETC announces, and Besu derives the EIP-2124 fork ID
+from those same activations. Forks that change no ETC rule (Homestead, Agharta, Phoenix, Magneto)
+restate the rules of the era they fall in, so the schedule and the advertised fork ID cannot state
+different boundaries. `ClassicProtocolScheduleCustomizerTest` pins both against core-geth's own fork
+ID vectors.
+
+Network naming is not the plugin's: genesis, network id and the eth capability cap come from a Besu
+profile (see `dist/profiles`), which is the mechanism Besu defines for a network it does not ship.
 
 ## Prerequisites
 
-This plugin requires a fork of Besu with plugin extension points for external consensus layers. The fork lives at [diega/besu](https://github.com/diega/besu) on the `plugin-extensions` branch.
+This plugin needs a Besu that carries the protocol-schedule customization extension point
+(`ProtocolScheduleService`, `ProtocolScheduleCustomizer`). That work is on the
+`pr/protocol-schedule-customization` branch of [diega/besu](https://github.com/diega/besu), pending
+upstream review.
 
 ## Building
 
@@ -28,7 +39,7 @@ This plugin requires a fork of Besu with plugin extension points for external co
 
 1. Clone the Besu fork next to this repository:
    ```bash
-   git clone -b plugin-extensions https://github.com/diega/besu.git ../besu
+   git clone -b pr/protocol-schedule-customization https://github.com/diega/besu.git ../besu
    ```
 
 2. Create `local.properties`:
@@ -62,27 +73,31 @@ cd ../besu-etc-plugin
 
 ## Running
 
-Copy the plugin JAR into Besu's `plugins/` directory:
+Install the plugin JAR, a genesis file and a profile:
 
 ```bash
-cp build/libs/besu-etc-plugin-*.jar ../besu/build/install/besu/plugins/
+BESU=../besu/build/install/besu
+cp build/libs/besu-etc-plugin-*.jar "$BESU/plugins/"
+cp src/main/resources/classic.json  "$BESU/etc/"
+cp dist/profiles/classic.toml       "$BESU/profiles/"
 ```
 
-Then start Besu with the ETC network:
+Besu resolves `genesis-file` relative to the working directory rather than to the profile, so edit
+the path in `classic.toml` to wherever `classic.json` ended up. Then:
 
 ```bash
-../besu/build/install/besu/bin/besu --network=classic --data-path=data --Xeth-capability-max=68
+"$BESU/bin/besu" --profile=classic --data-path=data
 ```
 
-**Note:** ETC networks require `--Xeth-capability-max=68` because ETC peers only support eth/68 and below (eth/69+ removed Total Difficulty from the handshake, which ETC still needs as a PoW chain).
+**Note:** the profile sets `Xeth-capability-max=68`, which ETC networks require: ETC peers only
+support eth/68 and below (eth/69+ removed Total Difficulty from the handshake, which ETC still
+needs as a PoW chain).
 
 ## Configuration
 
 ```
---network=classic                                  # ETC mainnet (chain ID 61)
---network=mordor                                   # Mordor testnet (chain ID 63)
-
---Xeth-capability-max=68                           # Required: cap eth protocol to eth/68 (ETC is PoW, needs TD)
+--profile=classic                                  # ETC mainnet (chain ID 61)
+--profile=mordor                                   # Mordor testnet (chain ID 63)
 
 --plugin-classic-safe-block-depth=24               # Confirmation depth for "safe" (default: 24)
 --plugin-classic-finalized-block-depth=400         # Deep-confirmation depth for "finalized" (default: 400)

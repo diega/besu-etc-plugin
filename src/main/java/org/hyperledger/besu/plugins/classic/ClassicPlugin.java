@@ -14,12 +14,11 @@
  */
 package org.hyperledger.besu.plugins.classic;
 
-import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleCustomizer;
+import org.hyperledger.besu.ethereum.mainnet.ProtocolScheduleService;
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.BlockchainService;
-import org.hyperledger.besu.plugin.services.NetworkProvider;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugins.classic.chain.ChainTracker;
 import org.hyperledger.besu.plugins.classic.config.ClassicOptions;
@@ -35,14 +34,17 @@ import org.slf4j.LoggerFactory;
  * Classic Plugin — Ethereum Classic (ETC) support for Hyperledger Besu.
  *
  * <p>This plugin configures ETC networks (mainnet chain ID 61, Mordor testnet chain ID 63) by
- * wiring ETC-specific protocol rules and network compatibility settings into Besu's native
- * execution stack. It manages:
+ * wiring ETC-specific protocol rules into Besu's native execution stack. It manages:
  *
  * <ul>
- *   <li>Protocol schedule customization for ETC hardfork rules
- *   <li>Network compatibility services such as fork ID and eth capability restriction
+ *   <li>Protocol schedule customization for ETC hardfork rules, from which Besu derives the
+ *       EIP-2124 fork ID
  *   <li>Depth-based safe/finalized label tracking for PoW
  * </ul>
+ *
+ * <p>Network selection is not the plugin's: genesis, network id, bootnodes and the eth capability
+ * cap come from a Besu profile ({@code --profile=classic}), which is the mechanism Besu defines for
+ * naming a network it does not ship. See {@code dist/profiles} in this repository.
  */
 @AutoService(BesuPlugin.class)
 public class ClassicPlugin implements BesuPlugin {
@@ -70,13 +72,16 @@ public class ClassicPlugin implements BesuPlugin {
   public void register(final ServiceManager context) {
     this.serviceManager = context;
 
-    // Register network definitions for --network=classic / --network=mordor.
-    context.addService(NetworkProvider.class, new ClassicNetworkProvider());
-
-    // Inject ETC-specific protocol schedule adapters into Besu's native validation/import flow.
-    // The customizer also derives the EIP-2124 fork ID from the same ETC fork boundaries.
-    context.addService(
-        ProtocolScheduleCustomizer.class, new ClassicProtocolScheduleCustomizer());
+    // Inject ETC-specific protocol schedule rules into Besu's native validation/import flow. Besu
+    // derives the EIP-2124 fork ID from the activations those rules carry.
+    context
+        .getService(ProtocolScheduleService.class)
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "ProtocolScheduleService is not available; this plugin needs a Besu build that"
+                        + " supports protocol-schedule customization"))
+        .registerProtocolScheduleCustomizer(new ClassicProtocolScheduleCustomizer());
 
     // Register plugin-specific CLI options.
     context
