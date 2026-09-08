@@ -29,9 +29,17 @@ profile (see `dist/profiles`), which is the mechanism Besu defines for a network
 ## Prerequisites
 
 This plugin needs a Besu that carries the protocol-schedule customization extension point
-(`ProtocolScheduleService`, `ProtocolScheduleCustomizer`). That work is on the
-`pr/protocol-schedule-customization` branch of [diega/besu](https://github.com/diega/besu), pending
-upstream review.
+(`ProtocolScheduleService`, `ProtocolScheduleCustomizer`) and the generic genesis accessor the
+customizer reads its chain's keys through (`getCustomConfigLong`). Those are proposed upstream as
+three separate branches of [diega/besu](https://github.com/diega/besu), so build against
+`etc-integration`, which is the three of them stacked:
+
+| branch | what it carries |
+| --- | --- |
+| `fix/eth-config-next-fork` | `eth_config` no longer reports a block milestone as the next fork |
+| `feat/genesis-custom-config-long` | `GenesisConfigOptions.getCustomConfigLong` |
+| `pr/protocol-schedule-customization` | the extension point itself |
+| `etc-integration` | all three, and what this plugin builds against |
 
 ## Building
 
@@ -39,7 +47,7 @@ upstream review.
 
 1. Clone the Besu fork next to this repository:
    ```bash
-   git clone -b pr/protocol-schedule-customization https://github.com/diega/besu.git ../besu
+   git clone -b etc-integration https://github.com/diega/besu.git ../besu
    ```
 
 2. Create `local.properties`:
