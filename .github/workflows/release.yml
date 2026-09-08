@@ -20,7 +20,7 @@ jobs:
         run: |
           cat > /tmp/releases.yml <<'YAML'
           stable:
-            besu_branch: plugin-extensions
+            besu_branch: etc-integration
             besu_version: 26.7.0-etc-SNAPSHOT
           experimental: []
           YAML
