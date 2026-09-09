@@ -23,8 +23,9 @@ restate the rules of the era they fall in, so the schedule and the advertised fo
 different boundaries. `ClassicProtocolScheduleCustomizerTest` pins both against core-geth's own fork
 ID vectors.
 
-Network naming is not the plugin's: genesis, network id and the eth capability cap come from a Besu
+Network naming is not the plugin's: the network id and the eth capability cap come from a Besu
 profile (see `dist/profiles`), which is the mechanism Besu defines for a network it does not ship.
+The genesis is the one piece a profile cannot carry, and `dist/bin/besu-etc` supplies it.
 
 ## Prerequisites
 
@@ -78,20 +79,36 @@ cd ../besu-etc-plugin
 
 ## Running
 
-Install the plugin JAR, a genesis file and a profile:
+The release archives ship a Besu distribution with the plugin, both profiles, both genesis files and
+a `bin/besu-etc` launcher. Unpack anywhere and run it:
+
+```bash
+tar xzf besu-etc-26.7.0-etc-SNAPSHOT.tar.gz
+besu/bin/besu-etc --data-path=data                 # ETC mainnet
+besu/bin/besu-etc --profile=mordor --data-path=data
+```
+
+`besu-etc` exists for one reason: Besu resolves `genesis-file` against the working directory rather
+than against the profile, so a profile cannot name a genesis that travels with the installation. The
+launcher resolves its own location, follows symlinks, and passes the path as `BESU_GENESIS_FILE`,
+which sits below the command line in Besu's precedence — so `--genesis-file` still overrides it, and
+so does a `BESU_GENESIS_FILE` you export yourself. Everything else goes straight through to `besu`.
+On Windows, or when calling `bin/besu` directly, pass `--genesis-file` yourself.
+
+To run against a local build instead, install the plugin JAR, a genesis file and a profile:
 
 ```bash
 BESU=../besu/build/install/besu
 cp build/libs/besu-etc-plugin-*.jar "$BESU/plugins/"
-cp src/main/resources/classic.json  "$BESU/etc/"
-cp dist/profiles/classic.toml       "$BESU/profiles/"
+cp src/main/resources/classic.json src/main/resources/mordor.json "$BESU/etc/"
+cp dist/profiles/*.toml             "$BESU/profiles/"
+cp dist/bin/besu-etc                "$BESU/bin/"
 ```
 
-Besu resolves `genesis-file` relative to the working directory rather than to the profile, so edit
-the path in `classic.toml` to wherever `classic.json` ended up. Then:
+Then:
 
 ```bash
-"$BESU/bin/besu" --profile=classic --data-path=data
+"$BESU/bin/besu-etc" --data-path=data
 ```
 
 **Note:** the profile sets `Xeth-capability-max=68`, which ETC networks require: ETC peers only
@@ -110,8 +127,9 @@ needs as a PoW chain).
 
 ## Release
 
-Pushing a tag `v*` triggers the GitHub Actions release workflow, which:
-1. Checks out the Besu fork and publishes to mavenLocal
+The GitHub Actions release workflow runs on a push to `main` that touches
+`.github/workflows/release.yml`, and on manual dispatch. It:
+1. Checks out the Besu fork at the branch named in the workflow and publishes it to mavenLocal
 2. Builds the plugin
-3. Builds a Besu distribution with the plugin included
-4. Creates a GitHub Release with the tarball
+3. Builds a Besu distribution with the plugin, profiles, genesis files and the `besu-etc` launcher
+4. Publishes a prerelease with the tarball, the zip, the plugin jar and a sha256 for each

@@ -3,11 +3,12 @@
 # Besu reads profiles from ${besu.home}/profiles (override with -Dbesu.profiles.dir), so install
 # this file there and start with --profile=classic. The plugin jar must be in ${besu.home}/plugins.
 #
-# genesis-file has to be an absolute path or one relative to the working directory: Besu does not
-# resolve it against the profile's own location. Adjust it to wherever classic.json is installed.
-# Bootnodes and the DNS discovery tree come from the genesis file itself.
+# The genesis is deliberately not named here. Besu resolves genesis-file against the working
+# directory rather than against the profile, so any path written here would only work from one
+# place. bin/besu-etc computes it from the installation and passes it as BESU_GENESIS_FILE; running
+# bin/besu directly needs --genesis-file. Bootnodes and the DNS discovery tree come from the genesis
+# file itself.
 
-genesis-file="/opt/besu/etc/classic.json"
 network-id=1
 
 # ETC peers speak eth/68; Besu would otherwise offer a higher capability and find no peers.

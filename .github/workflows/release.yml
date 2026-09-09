@@ -104,8 +104,14 @@ jobs:
       - name: Assemble release
         run: |
           ARTIFACT="${{ steps.ver.outputs.artifact }}"
-          mkdir -p besu/build/install/besu/plugins
+          mkdir -p besu/build/install/besu/plugins besu/build/install/besu/profiles besu/build/install/besu/etc
           cp build/libs/besu-etc-plugin-*.jar besu/build/install/besu/plugins/
+          cp dist/profiles/*.toml besu/build/install/besu/profiles/
+          cp src/main/resources/classic.json src/main/resources/mordor.json besu/build/install/besu/etc/
+          # besu-etc resolves the installation from its own location, so the archive runs from
+          # wherever it is unpacked. The profiles carry the network; this carries the genesis path.
+          cp dist/bin/besu-etc besu/build/install/besu/bin/
+          chmod +x besu/build/install/besu/bin/besu-etc
           cd besu/build/install
           tar czf $GITHUB_WORKSPACE/besu-etc-${ARTIFACT}.tar.gz besu/
           zip -r $GITHUB_WORKSPACE/besu-etc-${ARTIFACT}.zip besu/

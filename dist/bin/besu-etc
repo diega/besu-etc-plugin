@@ -1,0 +1,47 @@
+#!/bin/sh
+# Starts Besu on an ETC network from wherever this distribution was unpacked.
+#
+# The profile carries what the network is; this script carries the one thing a profile cannot
+# name, which is where the installation lives. Besu resolves genesis-file against the working
+# directory rather than against the profile, so the path is computed here from this script's own
+# location and handed over as BESU_GENESIS_FILE. That sits below the command line in Besu's
+# precedence, so --genesis-file still wins, as does a BESU_GENESIS_FILE already in the environment.
+set -e
+
+# Resolve links: $0 may be one, and may be relative. Same walk bin/besu does.
+PRG="$0"
+while [ -h "$PRG" ]; do
+  ls=$(ls -ld "$PRG")
+  link=$(expr "$ls" : '.*-> \(.*\)$')
+  if expr "$link" : '/.*' > /dev/null; then
+    PRG="$link"
+  else
+    PRG=$(dirname "$PRG")"/$link"
+  fi
+done
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$PRG")/.." && pwd -P)
+
+profile=classic
+genesis_on_cli=false
+for arg in "$@"; do
+  case "$arg" in
+    --profile=*) profile="${arg#--profile=}" ;;
+    --genesis-file|--genesis-file=*) genesis_on_cli=true ;;
+  esac
+done
+case " $* " in
+  *" --profile="*) ;;
+  *) set -- --profile=classic "$@" ;;
+esac
+
+# An explicit --genesis-file outranks the environment, so leave it alone in that case.
+if [ "$genesis_on_cli" = false ]; then
+  : "${BESU_GENESIS_FILE:=$APP_HOME/etc/$profile.json}"
+  export BESU_GENESIS_FILE
+  if [ ! -f "$BESU_GENESIS_FILE" ]; then
+    echo "besu-etc: no genesis file at $BESU_GENESIS_FILE (profile '$profile')" >&2
+    exit 1
+  fi
+fi
+
+exec "$APP_HOME/bin/besu" "$@"
