@@ -93,7 +93,7 @@ than against the profile, so a profile cannot name a genesis that travels with t
 launcher resolves its own location, follows symlinks, and passes the path as `BESU_GENESIS_FILE`,
 which sits below the command line in Besu's precedence — so `--genesis-file` still overrides it, and
 so does a `BESU_GENESIS_FILE` you export yourself. Everything else goes straight through to `besu`.
-On Windows, or when calling `bin/besu` directly, pass `--genesis-file` yourself.
+`bin/besu-etc.bat` does the same on Windows. Calling `bin/besu` directly needs `--genesis-file`.
 
 To run against a local build instead, install the plugin JAR, a genesis file and a profile:
 
@@ -102,7 +102,7 @@ BESU=../besu/build/install/besu
 cp build/libs/besu-etc-plugin-*.jar "$BESU/plugins/"
 cp src/main/resources/classic.json src/main/resources/mordor.json "$BESU/etc/"
 cp dist/profiles/*.toml             "$BESU/profiles/"
-cp dist/bin/besu-etc                "$BESU/bin/"
+cp dist/bin/besu-etc*               "$BESU/bin/"
 ```
 
 Then:

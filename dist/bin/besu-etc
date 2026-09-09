@@ -21,18 +21,23 @@ while [ -h "$PRG" ]; do
 done
 APP_HOME=$(CDPATH= cd -- "$(dirname -- "$PRG")/.." && pwd -P)
 
+# Both spellings of an option are accepted, so both are recognised here.
 profile=classic
+has_profile=false
 genesis_on_cli=false
+prev=""
 for arg in "$@"; do
+  if [ "$prev" = "--profile" ]; then profile="$arg"; fi
   case "$arg" in
-    --profile=*) profile="${arg#--profile=}" ;;
+    --profile) has_profile=true ;;
+    --profile=*) profile="${arg#--profile=}"; has_profile=true ;;
     --genesis-file|--genesis-file=*) genesis_on_cli=true ;;
   esac
+  prev="$arg"
 done
-case " $* " in
-  *" --profile="*) ;;
-  *) set -- --profile=classic "$@" ;;
-esac
+if [ "$has_profile" = false ]; then
+  set -- --profile=classic "$@"
+fi
 
 # An explicit --genesis-file outranks the environment, so leave it alone in that case.
 if [ "$genesis_on_cli" = false ]; then

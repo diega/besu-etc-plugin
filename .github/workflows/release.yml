@@ -110,7 +110,7 @@ jobs:
           cp src/main/resources/classic.json src/main/resources/mordor.json besu/build/install/besu/etc/
           # besu-etc resolves the installation from its own location, so the archive runs from
           # wherever it is unpacked. The profiles carry the network; this carries the genesis path.
-          cp dist/bin/besu-etc besu/build/install/besu/bin/
+          cp dist/bin/besu-etc dist/bin/besu-etc.bat besu/build/install/besu/bin/
           chmod +x besu/build/install/besu/bin/besu-etc
           cd besu/build/install
           tar czf $GITHUB_WORKSPACE/besu-etc-${ARTIFACT}.tar.gz besu/
