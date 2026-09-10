@@ -27,7 +27,7 @@ La tercera falla sale del recorrido del anuncio, con las mismas claves. `Genesis
 
 ## 1. La cadena de ejemplo, andando
 
-*Traé que las reglas salen de las claves de génesis y que hoy el plugin no tiene dónde meterse.*
+*Para entrar acá: las reglas salen de las claves de génesis, y hoy el plugin no tiene dónde meterse.*
 
 La cadena de ejemplo tiene Frontier en 0 y `byzantiumBlock` en 16. `MainnetProtocolSchedule` pone un único modifier estructural, la identidad en 0, que llamo `s0`. El plugin aporta 42 wei de recompensa desde el bloque 10, que llamo `c10`, y la identidad desde el bloque 18, que llamo `c18`.
 
@@ -71,7 +71,7 @@ Commits `a65156acaf` y `a2456846a8`. Lo fijan `ProtocolScheduleCustomizationTest
 
 ## 2. La misma declaración anuncia
 
-*Traé la cadena de ejemplo: `c10` pone 42 wei, `c18` los retira, y todavía nadie anuncia esos bordes.*
+*Para entrar acá: la cadena de ejemplo, donde `c10` pone 42 wei y `c18` los retira, y que todavía nadie anuncia esos bordes.*
 
 El nodo de la cadena de ejemplo cambia de reglas en 10 y en 18, así que tiene que anunciar bordes en 10 y en 18. Esos dos números ya están declarados en las dos modifications, y el plugin no los declara de nuevo.
 
@@ -97,7 +97,7 @@ Commits `98874f8b17` y `a65156acaf`. Lo fijan `GenesisConfigForkIdActivationsTes
 
 ## 3. Por qué hacen falta dos pares de accessors
 
-*Traé que hay dos pares de accessors sobre las mismas claves y que todavía nadie justificó el segundo.*
+*Para entrar acá: hay dos pares de accessors sobre las mismas claves, y todavía nadie justificó el segundo.*
 
 Los dos pares responden preguntas distintas. `getForkBlockNumbers()` y `getForkBlockTimestamps()` dicen qué forks declara este config con claves que Besu interpreta. `getForkIdBlockNumbers()` y `getForkIdBlockTimestamps()` dicen con qué bordes tienen que coincidir los peers. Al primer par lo llamo el declarado y al segundo el anunciado, y el anunciado es el declarado más lo contribuido.
 
@@ -121,7 +121,7 @@ Hasta acá está la tesis, con las tres propiedades por las que upstream puede a
 
 ## 4. La cadena de ejemplo se rompe
 
-*Traé la cadena de ejemplo y que una modification aporta el overlay completo y reemplaza a la anterior.*
+*Para entrar acá: la cadena de ejemplo, y que una modification aporta el overlay completo y reemplaza a la anterior.*
 
 La cadena vuelve a su forma del capítulo 1: Frontier en 0, `byzantiumBlock` en 16, `c10` con 42 wei, `c18` con la identidad. Ahora le agrego un segundo modifier estructural, la identidad en el bloque 20. Es una forma legal para `compose`, que es público, y para `ProtocolScheduleBuilder`, que se construye directo. `a2456846a8` la rechaza, y este capítulo es el motivo. Sin ese rechazo, una corrida puntual daba esto.
 
@@ -156,7 +156,7 @@ Commit `a2456846a8`. Lo fijan `ProtocolScheduleBuilderTest#aStructuralModifierOn
 
 ## 5. Formas que el schedule no puede honrar
 
-*Traé el dominio de una activación y el mapa de entradas que el builder arma antes de construir.*
+*Para entrar acá: el dominio de una activación, y el mapa de entradas que el builder arma antes de construir.*
 
 De un solo hecho se deduce todo este capítulo. `DefaultProtocolSchedule` mantiene un único `TreeSet` ordenado por la magnitud del milestone, sin mirar el dominio (`:43-44`), y `getByBlockHeader` lo recorre de mayor a menor devolviendo la primera spec cuyo borde el header ya cruzó (`:68-80`). Eso funciona porque los timestamps reales son enormes y todos los forks de bloque quedan por debajo.
 
@@ -186,7 +186,7 @@ Commit `58af784e86`, más `a2456846a8` para el residuo del DAO. Lo fijan `Protoc
 
 ## 6. Del plugin al nodo
 
-*Traé la customization entera: sus modifications, sus activaciones y las dos negativas que la validan.*
+*Para entrar acá: la customization entera, o sea sus modifications, sus activaciones y las dos negativas que la validan.*
 
 `ProtocolScheduleCustomizer` es el contrato del plugin, una interfaz funcional con `Optional<ProtocolScheduleCustomization> customize(GenesisConfigOptions)`. El plugin lo registra en su fase `register`, a través de `ProtocolScheduleService`. El customizer de ETC lee ahí el `classic.json` declarado y devuelve una sola customization. Nada de esto entra en `besu-plugin-api`, y 8.1 explica por qué.
 
@@ -232,7 +232,7 @@ Commits `c7e518f56f` y `bb20b8d442`. Lo fijan `ProtocolScheduleServiceImplTest`,
 
 ## 7. Los siete commits
 
-*Traé que todo lo anterior existe. Acá está en qué commit entra cada cosa, y por qué van separados.*
+*Para entrar acá: todo lo anterior. Este capítulo dice en qué commit entra cada cosa, y por qué van separados.*
 
 Cada commit compila solo y es un no-op para una cadena sin plugin. Esa es la propiedad con la que le pedís a upstream que revise siete commits en vez de auditar ETC, y recién el séptimo hace que una contribución de plugin afecte a un nodo. Ninguno de los siete nombra a ETC.
 
@@ -250,7 +250,7 @@ Base `b330564a94`, un commit real de upstream/main. Diff de 38 archivos, +2394/�
 
 ## 8. Lo que te van a preguntar en la revisión
 
-*Traé el alias del capítulo 4, el corte de Paris del 3 y la negativa a arrancar del 6.*
+*Para entrar acá: el alias del capítulo 4, el corte de Paris del 3 y la negativa a arrancar del 6.*
 
 ### 8.1 "¿Por qué el punto de extensión está en `ethereum/core` y no en `plugin-api`?"
 
@@ -288,7 +288,7 @@ Aparte de eso quedan dos pedidos que no bloquean. Conviene que esa misma entrada
 
 ## Apéndice A. Qué cubre el suite
 
-*Acá no hace falta traer nada. Es la respuesta a qué cubre exactamente la serie.*
+*Para entrar acá no hace falta nada. Es la respuesta a qué cubre exactamente la serie.*
 
 El diff toca trece archivos de test y suma 1199 líneas. La tabla lista los once que cubren algo nuevo, más `QbftProtocolScheduleBuilderTest`, que es preexistente y no está en el diff. Los otros dos, `RunnerBuilderTest` y `CommandTestAbstract`, solo ajustan firmas.
 
@@ -307,7 +307,7 @@ El diff toca trece archivos de test y suma 1199 líneas. La tabla lista los once
 
 ## Apéndice B. Dónde vive cada pieza
 
-*Acá no hace falta traer nada. Es dónde buscar una clase dentro de dos meses.*
+*Para entrar acá no hace falta nada. Es dónde buscar una clase dentro de dos meses.*
 
 | pieza | módulo | capítulo |
 |---|---|---|
