@@ -38,7 +38,9 @@ Cada aporte del plugin es una `ProtocolSpecModification`: una activación más u
 
 Una *era* es el tramo en el que rige un juego de reglas, entre dos cambios consecutivos del schedule. En la cadena de ejemplo hay cuatro, y las abren tanto los milestones de Besu como las activaciones del plugin: 0, 10, 16 y 18.
 
-Un *overlay* son los cambios que el modifier de una modification le hace a la spec de su era. El de `c10` es uno solo: poner la recompensa en 42 wei. Cada modification trae el overlay completo de su era y no un ajuste sobre el anterior, que es lo que la grilla de abajo hace visible.
+Un *overlay* son los cambios que el modifier de una modification le hace a la spec que Besu construiría en esa altura. El de `c10` es uno solo: poner la recompensa en 42 wei, sobre la base de Frontier. Una modification abre una era pero no la define entera, porque el resto de la spec lo sigue poniendo Besu.
+
+Lo que cada modification trae completo es el overlay, no un ajuste sobre el de la anterior. La siguiente lo reemplaza entero, y la grilla de abajo lo hace visible.
 
 `ProtocolSpecAdapters.compose` arma tres `NavigableMap` a partir de los estructurales y de la customization (`ProtocolSpecAdapters.java:42-47`). Los tres tienen la misma forma: una altura como clave y un modifier como valor. Los estructurales ya vienen así. Cada modification se desarma al entrar: su activación pasa a ser la clave y su modifier el valor. La unidad en la que se mide esa activación decide si cae en el mapa de bloques o en el de timestamps (`:117-127`). De ahí en adelante la modification no existe: es el formato en el que el plugin declara, no lo que Besu consulta. El lookup resuelve por floor dentro de cada mapa ([`ProtocolSpecAdapters.java:132-188`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolSpecAdapters.java#L132-L188)), y el *floor* es la última entrada del mapa que no supera la altura que se está construyendo.
 
