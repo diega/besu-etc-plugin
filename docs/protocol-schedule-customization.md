@@ -17,11 +17,11 @@ Este documento es para vos. La versión condensada para el revisor vive aparte, 
 
 Con ese `classic.json`, el Besu de upstream arranca un nodo que hace tres cosas mal. En los forks que ETC comparte con ETH aplica las reglas de ETH, con 3 ETH de recompensa en Byzantium y bomba de dificultad. En los forks propios de ETC no cambia ninguna regla. Y les anuncia a sus peers una cadena en la que ninguno de esos forks existe.
 
-La cadena declara un fork cuando lo pone en el génesis, y el nodo lo anuncia cuando lo mete en el fork ID de EIP-2124 que les manda a sus peers. Cada uno de esos números es un borde. Declarar y anunciar son dos cosas distintas, y las separo en todo el documento.
+La cadena declara un fork cuando lo pone en el génesis, y el nodo lo anuncia cuando lo mete en el fork ID de EIP-2124 que les manda a sus peers. Cada uno de esos números es un *borde*. Declarar y anunciar son dos cosas distintas, y las separo en todo el documento.
 
-Las dos primeras fallas salen del recorrido de las reglas. Besu define un juego de claves de génesis (`homesteadBlock`, `byzantiumBlock`, `shanghaiTime`, y el resto). Un milestone es una altura donde Besu declara que cambian las reglas, y `MilestoneDefinitions` convierte cada clave presente en uno. Cada milestone trae un `ProtocolSpecBuilder`, el objeto mutable del que sale la `ProtocolSpec` de esa altura.
+Las dos primeras fallas salen del recorrido de las reglas. Besu define un juego de claves de génesis (`homesteadBlock`, `byzantiumBlock`, `shanghaiTime`, y el resto). Un *milestone* es una altura donde Besu declara que cambian las reglas, y `MilestoneDefinitions` convierte cada clave presente en uno. Cada milestone trae un `ProtocolSpecBuilder`, el objeto mutable del que sale la `ProtocolSpec` de esa altura.
 
-El mecanismo de consenso retoca esos builders, y los mecanismos son cuatro: Clique, BFT, merge y dificultad fija. Un modifier es un `UnaryOperator<ProtocolSpecBuilder>` que recibe el builder y lo devuelve retocado. A los modifiers que instalan el mecanismo de consenso los llamo estructurales en todo el documento. `ProtocolSpecAdapters` los tiene, `ProtocolScheduleBuilder` construye una spec por milestone, y el resultado es el `ProtocolSchedule`.
+El mecanismo de consenso retoca esos builders, y los mecanismos son cuatro: Clique, BFT, merge y dificultad fija. Un *modifier* es un `UnaryOperator<ProtocolSpecBuilder>` que recibe el builder y lo devuelve retocado. A los modifiers que instalan el mecanismo de consenso los llamo *estructurales* en todo el documento. `ProtocolSpecAdapters` los tiene, `ProtocolScheduleBuilder` construye una spec por milestone, y el resultado es el `ProtocolSchedule`.
 
 La tercera falla sale del recorrido del anuncio, con las mismas claves. `GenesisConfigOptions.getForkBlockNumbers()` y `getForkBlockTimestamps()` entregan los bordes declarados, y el `ForkIdManager` los resume en el fork ID. Ese ID viaja a tres lugares: el handshake `Status`, el ENR y `eth_config`. Los plugins no participan en ninguno de los dos recorridos, y lo que sigue es una cadena de ejemplo con la misma forma que ETC.
 
@@ -33,11 +33,11 @@ La cadena de ejemplo declara dos milestones que Besu ya conoce: Frontier en 0 y 
 
 El plugin aporta dos cosas, y ninguna cae sobre un milestone de Besu. Una es 42 wei de recompensa desde el bloque 10, que llamo `c10`. La otra es la identidad desde el bloque 18, que llamo `c18`. Byzantium en 16 está en el ejemplo para ver qué le pasa a `c10` cuando Besu cambia de era en el medio.
 
-Cada aporte del plugin es una `ProtocolSpecModification`: una activación más un modifier. La activación es la altura donde ese aporte entra en vigencia, 10 y 18 acá. Un modifier lo escribe Besu o lo escribe el plugin, y una modification siempre la aporta el plugin. A lo que aporta el plugin lo llamo contribuido en todo el documento. Las dos modifications juntas, con un nombre, son una `ProtocolScheduleCustomization`.
+Cada aporte del plugin es una `ProtocolSpecModification`: una activación más un modifier. La *activación* es la altura donde ese aporte entra en vigencia, 10 y 18 acá. Un modifier lo escribe Besu o lo escribe el plugin, y una modification siempre la aporta el plugin. A los aportes del plugin los llamo *contribuidos* en todo el documento. Las dos modifications juntas, con un nombre, son una `ProtocolScheduleCustomization`.
 
-Una era es el tramo entre dos milestones, y en la cadena de ejemplo hay dos, la de Frontier y la de Byzantium. Lo que una modification escribe sobre el builder de la altura que se está construyendo es un overlay. Cada modification aporta el overlay completo, así que la siguiente la reemplaza en vez de sumarse a ella, y mientras tanto sigue vigente a través de los milestones que haya en el medio.
+Una *era* es el tramo entre dos milestones, y en la cadena de ejemplo hay dos, la de Frontier y la de Byzantium. Lo que una modification escribe sobre el builder de la altura que se está construyendo es un *overlay*. Cada modification aporta el overlay completo, así que la siguiente la reemplaza en vez de sumarse a ella, y mientras tanto sigue vigente a través de los milestones que haya en el medio.
 
-`ProtocolSpecAdapters.compose` arma tres `NavigableMap` a partir de los estructurales y de la customization (`ProtocolSpecAdapters.java:42-47`). Uno lleva los estructurales. Los otros dos llevan las modifications separadas por la unidad en la que se mide su activación, bloques o timestamps. El lookup resuelve por floor dentro de cada mapa ([`ProtocolSpecAdapters.java:132-188`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolSpecAdapters.java#L132-L188)), y el floor es la última entrada del mapa que no supera la altura que se está construyendo.
+`ProtocolSpecAdapters.compose` arma tres `NavigableMap` a partir de los estructurales y de la customization (`ProtocolSpecAdapters.java:42-47`). Uno lleva los estructurales. Los otros dos llevan las modifications separadas por la unidad en la que se mide su activación, bloques o timestamps. El lookup resuelve por floor dentro de cada mapa ([`ProtocolSpecAdapters.java:132-188`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolSpecAdapters.java#L132-L188)), y el *floor* es la última entrada del mapa que no supera la altura que se está construyendo.
 
 ```text
 getModifierForBlock(b)     = combine( floor(estructural, b), floor(customBlock, b) )
@@ -47,7 +47,7 @@ combine(s, c) = s == null ? (c == null ? identity : c)
                           : (c == null ? s : s.andThen(c))     // estructural primero, plugin después
 ```
 
-Cada milestone arranca de un `ProtocolSpecBuilder` propio y sin tocar, que abajo llamo fresco. Cada spec sale de un builder fresco, con un modifier estructural y un overlay encima.
+Cada milestone arranca de un `ProtocolSpecBuilder` propio y sin tocar, que abajo llamo *fresco*. Cada spec sale de un builder fresco, con un modifier estructural y un overlay encima.
 
 ```text
  bloque         0            10            16            18
@@ -67,7 +67,7 @@ Una modification reemplaza a la anterior. Por eso `c18`, que es la identidad, de
 
 El estructural y el contribuido se eligen por separado y recién después se encadenan. Por eso `c10` sobrevive al borde de Byzantium en 16, y `s0` sobrevive a los bordes del plugin.
 
-El plugin de ETC paga esas tres reglas en la práctica ([`ClassicProtocolSpecs.java:104-134`](https://github.com/diega/besu-etc-plugin/blob/e9b783799b7b66e47bd9bcbf8fd304c7d51b4d2b/src/main/java/org/hyperledger/besu/plugins/classic/protocol/ClassicProtocolSpecs.java#L104-L134)). Agharta, Phoenix y Magneto repiten el overlay de Atlantis, porque omitirlo lo retiraría. Y los ciclos de ECIP-1017, cada 5.000.000 de bloques, viven adentro de un modifier en vez de ser modifications, porque la cadena no los anuncia como forks. En ETC a esos ciclos también les dicen eras, así que acá los llamo ciclos de recompensa y reservo era para el tramo entre milestones.
+El plugin de ETC paga esas tres reglas en la práctica ([`ClassicProtocolSpecs.java:104-134`](https://github.com/diega/besu-etc-plugin/blob/e9b783799b7b66e47bd9bcbf8fd304c7d51b4d2b/src/main/java/org/hyperledger/besu/plugins/classic/protocol/ClassicProtocolSpecs.java#L104-L134)). Agharta, Phoenix y Magneto repiten el overlay de Atlantis, porque omitirlo lo retiraría. Y los ciclos de ECIP-1017, cada 5.000.000 de bloques, viven adentro de un modifier en vez de ser modifications, porque la cadena no los anuncia como forks. En ETC a esos ciclos también les dicen eras, así que acá los llamo *ciclos de recompensa* y reservo *era* para el tramo entre milestones.
 
 Commits `a65156acaf` y `a2456846a8`. Lo fijan `ProtocolScheduleCustomizationTest` y `ProtocolScheduleBuilderTest#aLaterModificationReplacesAnEarlierOneRatherThanInheritingIt`.
 
@@ -77,7 +77,7 @@ Commits `a65156acaf` y `a2456846a8`. Lo fijan `ProtocolScheduleCustomizationTest
 
 El nodo de la cadena de ejemplo cambia de reglas en 10 y en 18, así que tiene que anunciar bordes en 10 y en 18. Esos dos números ya están declarados en las dos modifications, y el plugin no los declara de nuevo.
 
-Para derivarlos hace falta saber si un número cuenta bloques o cuenta timestamps. A esa unidad la llamo el dominio de la activación, y acá viaja en el tipo. `ProtocolScheduleActivation` es una `sealed interface` con dos implementaciones, `BlockNumber` y `Timestamp`, en vez de una convención sobre un `long`. `ProtocolScheduleCustomization.toForkIdActivations()` recorre las modifications con un `switch` exhaustivo sobre ese tipo y manda cada activación a la lista de su dominio. Un dominio nuevo no compila hasta que alguien decide a qué lista va.
+Para derivarlos hace falta saber si un número cuenta bloques o cuenta timestamps. A esa unidad la llamo el *dominio* de la activación, y acá viaja en el tipo. `ProtocolScheduleActivation` es una `sealed interface` con dos implementaciones, `BlockNumber` y `Timestamp`, en vez de una convención sobre un `long`. `ProtocolScheduleCustomization.toForkIdActivations()` recorre las modifications con un `switch` exhaustivo sobre ese tipo y manda cada activación a la lista de su dominio. Un dominio nuevo no compila hasta que alguien decide a qué lista va.
 
 Ese mismo tipo reparte las modifications entre los dos mapas contribuidos del capítulo anterior, y el floor corre adentro de cada mapa sin cruzar al otro. Un bloque y un timestamp no se ordenan entre sí, y aplicar un overlay de bloque en la era de timestamps lo llevaría a alturas que su activación nunca alcanzó.
 
@@ -101,13 +101,13 @@ Commits `98874f8b17` y `a65156acaf`. Lo fijan `GenesisConfigForkIdActivationsTes
 
 *Para entrar acá: hay dos pares de accessors sobre las mismas claves, y todavía nadie justificó el segundo.*
 
-Los dos pares responden preguntas distintas. `getForkBlockNumbers()` y `getForkBlockTimestamps()` dicen qué forks declara este config con claves que Besu interpreta. `getForkIdBlockNumbers()` y `getForkIdBlockTimestamps()` dicen con qué bordes tienen que coincidir los peers. Al primer par lo llamo el declarado y al segundo el anunciado, y el anunciado es el declarado más lo contribuido.
+Los dos pares responden preguntas distintas. `getForkBlockNumbers()` y `getForkBlockTimestamps()` dicen qué forks declara este config con claves que Besu interpreta. `getForkIdBlockNumbers()` y `getForkIdBlockTimestamps()` dicen con qué bordes tienen que coincidir los peers. Al primer par lo llamo el *declarado* y al segundo el *anunciado*, y el anunciado es el declarado más lo contribuido.
 
 Al declarado lo leen `MilestoneDefinitions`, merge, la validación del capítulo 5 y el propio plugin cuando decide si reclama la cadena. Al anunciado lo lee el `ForkIdManager` en sus tres instancias.
 
 La prueba de que no alcanza con un par es merge. Para verla, la cadena de ejemplo crece: además de Frontier en 0 y `byzantiumBlock` en 16, ahora tiene `shanghaiTime: 1000`. El plugin agrega una tercera modification, la identidad en el timestamp 500.
 
-Merge pone sus modifications de Paris en el bloque 0 y las desaplica con una identidad en el primer fork de timestamp declarado ([`MergeProtocolSchedule.java:79-84`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L79-L84) y [`166-174`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L166-L174)). Ese método lee el par declarado y encuentra 1000. A esa desaplicación la llamo el corte de Paris.
+Merge pone sus modifications de Paris en el bloque 0 y las desaplica con una identidad en el primer fork de timestamp declarado ([`MergeProtocolSchedule.java:79-84`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L79-L84) y [`166-174`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L166-L174)). Ese método lee el par declarado y encuentra 1000. A esa desaplicación la llamo el *corte de Paris*.
 
 Si leyera el par anunciado encontraría 500. El corte de Paris se adelantaría a 500 y la cadena correría reglas pre-merge entre 500 y 1000. El test `aContributedTimestampDoesNotDisplaceTheParisCutoff` fija eso: en el header (bloque 100, timestamp 501) el opcode `0x44` sigue siendo `PrevRanDaoOperation`, y 500 sí aparece en `getForkIdBlockTimestamps()`. De ahí sale el principio que enuncia `bb20b8d442`: una customization se anuncia y no mueve un borde del que el schedule se construye. Ese principio solo es expresable con dos pares.
 
@@ -146,7 +146,7 @@ La contribuida construye fresco porque el lookup le aplica exactamente un overla
 
 Con los dos motivos puestos, la fila del 20 se explica sola. El estructural en 20 se inserta primero, su padre es `floorEntry(20)`, que es Byzantium en 16, y toma la misma instancia `B16` que la entrada de 16. Al construir en orden ascendente, en 16 corre `s0.andThen(c10)`, que llama a `blockReward(42)` ([`ProtocolSpecBuilder.java:126-127`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolSpecBuilder.java#L126-L127)), que muta el builder. En 18 una instancia fresca recibe `s0.andThen(c18)` y vuelve a 3 ETH. En 20 el modifier son dos identidades aplicadas sobre `B16`, que todavía tiene 42.
 
-A esa forma la llamo el alias: una entrada estructural que cae fuera de un milestone queda como segundo poseedor de la instancia de otro. La modification posterior reemplazó el overlay en su propia entrada y no pudo alcanzar la instancia prestada. La salida adoptada es acotar lo que el plugin puede pedir y hacerlo cumplir. Con customization no vacía, `insertStructuralModifier` (`:181-191`) rechaza toda activación estructural que no sea ya una clave del mapa. A ese rechazo lo llamo la guarda.
+A esa forma la llamo el *alias*: una entrada estructural que cae fuera de un milestone queda como segundo poseedor de la instancia de otro. La modification posterior reemplazó el overlay en su propia entrada y no pudo alcanzar la instancia prestada. La salida adoptada es acotar lo que el plugin puede pedir y hacerlo cumplir. Con customization no vacía, `insertStructuralModifier` (`:181-191`) rechaza toda activación estructural que no sea ya una clave del mapa. A ese rechazo lo llamo la *guarda*.
 
 La razón es exacta. Sobre una clave existente, `builders.put` reemplaza la entrada del milestone, así que la instancia compartida queda con un único poseedor. Fuera de una clave, `put` agrega el segundo poseedor, que es el alias. En el ejemplo, un estructural en 16 en vez de 20 reemplaza la entrada de Byzantium, la modification en 18 nace fresca con la `definition` propagada (`:245`), y nadie relee `B16`.
 
@@ -164,7 +164,7 @@ De un solo hecho se deduce todo este capítulo. `DefaultProtocolSchedule` mantie
 
 Un par invertido, o sea un bloque y un timestamp cuyo orden por magnitud contradice el orden por dominio, rompe esa premisa de dos maneras. Una spec de timestamp por debajo de un milestone de bloque queda tapada por él para todo header posterior a ese bloque. Y al revés: un bloque por encima del primer fork de timestamp se construye desde la definición de la era de bloques y tapa a la era de timestamps. En los dos casos la activación se anuncia en el fork ID y el nodo no la mantiene, que es lo que esta rama existe para impedir.
 
-Hay un tercer caso, que es el mismo problema con otra forma. El builder escribe specs propias en `daoForkBlock` y `daoForkBlock + 1`, y restaura la anterior en `daoForkBlock + 10` ([`ProtocolScheduleBuilder.java:138-163`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolScheduleBuilder.java#L138-L163)). A ese tramo lo llamo la ventana del DAO. Una entrada contribuida ahí adentro o bien es pisada o bien pisa a la restauración.
+Hay un tercer caso, que es el mismo problema con otra forma. El builder escribe specs propias en `daoForkBlock` y `daoForkBlock + 1`, y restaura la anterior en `daoForkBlock + 10` ([`ProtocolScheduleBuilder.java:138-163`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolScheduleBuilder.java#L138-L163)). A ese tramo lo llamo la *ventana del DAO*. Una entrada contribuida ahí adentro o bien es pisada o bien pisa a la restauración.
 
 De ahí salen las tres formas que `ProtocolScheduleCustomization.validateAgainst(GenesisConfigOptions)` (`ProtocolScheduleCustomization.java:94`) rechaza.
 
