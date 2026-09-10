@@ -31,7 +31,7 @@ La tercera falla sale del recorrido del anuncio, con las mismas claves. `Genesis
 
 La cadena de ejemplo declara dos milestones que Besu ya conoce: Frontier en 0 y `byzantiumBlock` en 16. Los dos son de Besu y el plugin no los toca. `MainnetProtocolSchedule` pone además un único modifier estructural, la identidad en 0, que llamo `s0`.
 
-El plugin aporta dos cosas, y ninguna cae sobre un milestone de Besu. Una es 42 wei de recompensa desde el bloque 10, que llamo `c10`. La otra es la identidad desde el bloque 18, que llamo `c18`. Byzantium en 16 está en el ejemplo para ver qué le pasa a `c10` cuando Besu cambia de era en el medio.
+El plugin representa una cadena con dos forks propios que Besu no conoce, en el bloque 10 y en el 18. Ninguno cae sobre un milestone de Besu, y ese es el caso normal: si cayeran encima, Besu ya los tendría. Por cada fork el plugin aporta las reglas de la era que abre. En 10 son 42 wei de recompensa, que llamo `c10` por la altura donde entra. En 18 es la identidad, que llamo `c18`. Byzantium en 16 está en el ejemplo para ver qué le pasa a `c10` cuando Besu cambia de era en el medio.
 
 Cada aporte del plugin es una `ProtocolSpecModification`: una activación más un modifier. La *activación* es la altura donde ese aporte entra en vigencia, 10 y 18 acá. Un modifier lo escribe Besu o lo escribe el plugin, y una modification siempre la aporta el plugin. A los aportes del plugin los llamo *contribuidos* en todo el documento. Las dos modifications juntas, con un nombre, son una `ProtocolScheduleCustomization`.
 
