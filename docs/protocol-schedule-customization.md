@@ -23,17 +23,17 @@ Las dos primeras fallas salen del recorrido de las reglas. Besu define un juego 
 
 El mecanismo de consenso retoca esos builders, y los mecanismos son cuatro: Clique, BFT, merge y dificultad fija. Un modifier es un `UnaryOperator<ProtocolSpecBuilder>` que recibe el builder y lo devuelve retocado. A los modifiers que instalan el mecanismo de consenso los llamo estructurales en todo el documento. `ProtocolSpecAdapters` los tiene, `ProtocolScheduleBuilder` construye una spec por milestone, y el resultado es el `ProtocolSchedule`.
 
-La tercera falla sale del recorrido del anuncio, con las mismas claves. `GenesisConfigOptions.getForkBlockNumbers()` y `getForkBlockTimestamps()` entregan los bordes declarados, y el `ForkIdManager` los resume en el fork ID. Ese ID viaja a tres lugares: el handshake `Status`, el ENR y `eth_config`. Los plugins no participan en ninguno de los dos recorridos, y lo que sigue es una cadena de juguete con la misma forma que ETC.
+La tercera falla sale del recorrido del anuncio, con las mismas claves. `GenesisConfigOptions.getForkBlockNumbers()` y `getForkBlockTimestamps()` entregan los bordes declarados, y el `ForkIdManager` los resume en el fork ID. Ese ID viaja a tres lugares: el handshake `Status`, el ENR y `eth_config`. Los plugins no participan en ninguno de los dos recorridos, y lo que sigue es una cadena de ejemplo con la misma forma que ETC.
 
-## 1. La cadena de juguete, andando
+## 1. La cadena de ejemplo, andando
 
 *Traé que las reglas salen de las claves de génesis y que hoy el plugin no tiene dónde meterse.*
 
-La cadena de juguete tiene Frontier en 0 y `byzantiumBlock` en 16. `MainnetProtocolSchedule` pone un único modifier estructural, la identidad en 0, que llamo `s0`. El plugin aporta 42 wei de recompensa desde el bloque 10, que llamo `c10`, y la identidad desde el bloque 18, que llamo `c18`.
+La cadena de ejemplo tiene Frontier en 0 y `byzantiumBlock` en 16. `MainnetProtocolSchedule` pone un único modifier estructural, la identidad en 0, que llamo `s0`. El plugin aporta 42 wei de recompensa desde el bloque 10, que llamo `c10`, y la identidad desde el bloque 18, que llamo `c18`.
 
 Cada aporte del plugin es una `ProtocolSpecModification`: una activación más un modifier. La activación es la altura donde ese aporte entra en vigencia, 10 y 18 acá. Un modifier lo escribe Besu o lo escribe el plugin, y una modification siempre la aporta el plugin. A lo que aporta el plugin lo llamo contribuido en todo el documento. Las dos modifications juntas, con un nombre, son una `ProtocolScheduleCustomization`.
 
-Una era es el tramo entre dos milestones, y en la cadena de juguete hay dos, la de Frontier y la de Byzantium. Lo que una modification escribe sobre el builder de la altura que se está construyendo es un overlay. Cada modification aporta el overlay completo, así que la siguiente la reemplaza en vez de sumarse a ella, y mientras tanto sigue vigente a través de los milestones que haya en el medio.
+Una era es el tramo entre dos milestones, y en la cadena de ejemplo hay dos, la de Frontier y la de Byzantium. Lo que una modification escribe sobre el builder de la altura que se está construyendo es un overlay. Cada modification aporta el overlay completo, así que la siguiente la reemplaza en vez de sumarse a ella, y mientras tanto sigue vigente a través de los milestones que haya en el medio.
 
 `ProtocolSpecAdapters.compose` arma tres `NavigableMap` a partir de los estructurales y de la customization (`ProtocolSpecAdapters.java:42-47`). Uno lleva los estructurales. Los otros dos llevan las modifications separadas por la unidad en la que se mide su activación, bloques o timestamps. El lookup resuelve por floor dentro de cada mapa ([`ProtocolSpecAdapters.java:132-188`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/ethereum/core/src/main/java/org/hyperledger/besu/ethereum/mainnet/ProtocolSpecAdapters.java#L132-L188)), y el floor es la última entrada del mapa que no supera la altura que se está construyendo.
 
@@ -71,9 +71,9 @@ Commits `a65156acaf` y `a2456846a8`. Lo fijan `ProtocolScheduleCustomizationTest
 
 ## 2. La misma declaración anuncia
 
-*Traé la cadena de juguete: `c10` pone 42 wei, `c18` los retira, y todavía nadie anuncia esos bordes.*
+*Traé la cadena de ejemplo: `c10` pone 42 wei, `c18` los retira, y todavía nadie anuncia esos bordes.*
 
-El nodo de la cadena de juguete cambia de reglas en 10 y en 18, así que tiene que anunciar bordes en 10 y en 18. Esos dos números ya están declarados en las dos modifications, y el plugin no los declara de nuevo.
+El nodo de la cadena de ejemplo cambia de reglas en 10 y en 18, así que tiene que anunciar bordes en 10 y en 18. Esos dos números ya están declarados en las dos modifications, y el plugin no los declara de nuevo.
 
 Para derivarlos hace falta saber si un número cuenta bloques o cuenta timestamps. A esa unidad la llamo el dominio de la activación, y acá viaja en el tipo. `ProtocolScheduleActivation` es una `sealed interface` con dos implementaciones, `BlockNumber` y `Timestamp`, en vez de una convención sobre un `long`. `ProtocolScheduleCustomization.toForkIdActivations()` recorre las modifications con un `switch` exhaustivo sobre ese tipo y manda cada activación a la lista de su dominio. Un dominio nuevo no compila hasta que alguien decide a qué lista va.
 
@@ -103,7 +103,7 @@ Los dos pares responden preguntas distintas. `getForkBlockNumbers()` y `getForkB
 
 Al declarado lo leen `MilestoneDefinitions`, merge, la validación del capítulo 5 y el propio plugin cuando decide si reclama la cadena. Al anunciado lo lee el `ForkIdManager` en sus tres instancias.
 
-La prueba de que no alcanza con un par es merge. Para verla, la cadena de juguete crece: además de Frontier en 0 y `byzantiumBlock` en 16, ahora tiene `shanghaiTime: 1000`. El plugin agrega una tercera modification, la identidad en el timestamp 500.
+La prueba de que no alcanza con un par es merge. Para verla, la cadena de ejemplo crece: además de Frontier en 0 y `byzantiumBlock` en 16, ahora tiene `shanghaiTime: 1000`. El plugin agrega una tercera modification, la identidad en el timestamp 500.
 
 Merge pone sus modifications de Paris en el bloque 0 y las desaplica con una identidad en el primer fork de timestamp declarado ([`MergeProtocolSchedule.java:79-84`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L79-L84) y [`166-174`](https://github.com/diega/besu/blob/bb20b8d442d05e056a79028c8254535e1906b80c/consensus/merge/src/main/java/org/hyperledger/besu/consensus/merge/MergeProtocolSchedule.java#L166-L174)). Ese método lee el par declarado y encuentra 1000. A esa desaplicación la llamo el corte de Paris.
 
@@ -119,9 +119,9 @@ Commits `98874f8b17` y `e708f69ff1`. Lo fijan `MergeProtocolScheduleTest`, `Main
 
 Hasta acá está la tesis, con las tres propiedades por las que upstream puede aceptar la serie. Sin un plugin que reclame la cadena, la construcción del schedule es idéntica a la de hoy, commit por commit. Besu conserva la autoridad: elige el builder de consenso, es dueño del registro y decide qué puede honrar. Y donde no puede honrar lo que le piden, el nodo no arranca. Lo que sigue es cómo funciona por dentro.
 
-## 4. La cadena de juguete se rompe
+## 4. La cadena de ejemplo se rompe
 
-*Traé la cadena de juguete y que una modification aporta el overlay completo y reemplaza a la anterior.*
+*Traé la cadena de ejemplo y que una modification aporta el overlay completo y reemplaza a la anterior.*
 
 La cadena vuelve a su forma del capítulo 1: Frontier en 0, `byzantiumBlock` en 16, `c10` con 42 wei, `c18` con la identidad. Ahora le agrego un segundo modifier estructural, la identidad en el bloque 20. Es una forma legal para `compose`, que es público, y para `ProtocolScheduleBuilder`, que se construye directo. `a2456846a8` la rechaza, y este capítulo es el motivo. Sin ese rechazo, una corrida puntual daba esto.
 
