@@ -10,6 +10,7 @@ Este documento es para vos. La versión condensada para el revisor vive aparte, 
 - ¿Por qué la validación se invoca en el builder y no en las factories? → 5
 - ¿Alcanza con preguntarle al plugin una sola vez? → 8.5
 - ¿Esta rama habilita ETC, qué cubre el suite y qué falta para mergear? → 8.6, apéndice A y 8.7
+- ¿Por qué tres tipos nuevos y no el mapa que Besu ya tenía? → 8.8
 
 ## 0. Un nodo de ETC que arranca mal
 
@@ -287,6 +288,12 @@ No sola. El plugin lee sus claves propias con `GenesisConfigOptions.getCustomCon
 Una sola cosa bloquea el merge. La entrada de CHANGELOG que agrega `bb20b8d442` termina con un placeholder sin resolver, `[#NNNN](https://github.com/besu-eth/besu/pull/NNNN)`, y hay que completar el número una vez abierto el PR.
 
 Aparte de eso quedan dos pedidos que no bloquean. Conviene que esa misma entrada nombre `getForkIdBlockNumbers()` y `getForkIdBlockTimestamps()`, que hoy no menciona. Y conviene dejar escrito el seguimiento del aislamiento completo de 8.3.
+
+### 8.8 "¿Por qué tres tipos nuevos y no el mapa que ya existe?"
+
+Porque el mapa no puede decir el dominio. A Besu le alcanza con un `long` pelado porque sus estructurales caen sobre un milestone y heredan de él si cuenta bloques o timestamps. Una activación contribuida puede caer entre milestones, donde no hay de quién heredar, y `toForkIdActivations()` tiene que saber a cuál de las dos listas mandarla. El `sealed interface` con `BlockNumber` y `Timestamp` es el mínimo para expresar eso, y el `switch` exhaustivo hace que un dominio nuevo no compile hasta que alguien decida dónde va.
+
+Lo discutible es lo otro: que los estructurales no se hayan migrado al tipo nuevo. Es deliberado, y es lo que deja la asimetría que describe el capítulo 1. Convertirlos tocaría todos los builders de consenso y costaría la propiedad sobre la que se apoya la serie entera, que cada commit sea un no-op para una cadena sin plugin.
 
 ## Apéndice A. Qué cubre el suite
 
